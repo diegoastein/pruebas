@@ -36,7 +36,7 @@
       padding:20px; margin-top:16px;
     }
 
-    /* 👉 Destacado especial para "Licencias de este mes" (opción A verde) */
+    /* 👉 Destacado especial para "Licencias de este mes" (verde) */
     #blockMesActual{
       background:linear-gradient(135deg,#22c55e,#16a34a);
       border:1px solid #16a34a;
@@ -61,16 +61,20 @@
       box-shadow:0 0 0 3px rgba(79,70,229,.25);
       border-color:var(--accent);
     }
-    .actions{ display:flex; gap:10px; margin-top:6px; align-items:center; flex-wrap:wrap }
+    .actions{
+      display:flex; gap:10px; margin-top:6px; align-items:center; flex-wrap:wrap
+    }
 
     button{
       border:0; border-radius:12px; padding:10px 14px; cursor:pointer; font-weight:600;
       background:linear-gradient(180deg, var(--accent), var(--accent-2)); color:white;
       box-shadow:0 8px 20px rgba(79,70,229,.35);
       transition:.15s transform ease;
+      font-size:13px;
     }
     button:hover{ transform:translateY(-1px) }
     .secondary{ background:#111827; border:1px solid rgba(255,255,255,.07) }
+    .danger{ background:#7f1d1d; border:1px solid #b91c1c; box-shadow:0 8px 20px rgba(185,28,28,.4); }
     .ok{ background:linear-gradient(180deg,#22c55e,var(--ok)) }
 
     /* TABLAS */
@@ -80,10 +84,9 @@
       position:sticky; top:0; background:#0f172a; padding:12px; color:#cbd5e1;
       border-bottom:1px solid rgba(255,255,255,.06); text-align:left;
     }
-    tbody td{ padding:12px; border-bottom:1px solid rgba(255,255,255,.06) }
+    tbody td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,.06) }
     tbody tr:hover{ background:rgba(79,70,229,.08) }
 
-    /* Bloques de lista y pills */
     .count{ font-size:clamp(18px,3.2vw,22px); color:#e5e7eb; margin-bottom:10px }
     .kpis{ display:flex; flex-wrap:wrap; gap:10px; margin-top:8px }
     .pill{
@@ -164,11 +167,12 @@
 
         <div>
           <label>Cubre</label>
-          <input type="text" id="cubre" placeholder="Ej: Guardia, Consultorio..." />
+          <input type="text" id="cubre" placeholder="Nombre y Apellido del reemplazo" />
         </div>
 
         <div class="actions">
-          <button type="submit" class="ok">Registrar licencia</button>
+          <button type="submit" id="btnSubmitLic" class="ok">Registrar licencia</button>
+          <button type="button" id="cancelEditLic" class="secondary" style="display:none">Cancelar edición</button>
         </div>
       </form>
     </div>
@@ -185,6 +189,7 @@
                 <th>Cubre</th>
                 <th>Inicio</th>
                 <th>Fin</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -219,6 +224,7 @@
                 <th>Nombre</th>
                 <th>DNI</th>
                 <th>Servicio</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -237,7 +243,8 @@
         </div>
 
         <div class="actions">
-          <button type="submit" class="ok">Agregar profesional</button>
+          <button type="submit" id="btnSubmitPers" class="ok">Agregar profesional</button>
+          <button type="button" id="cancelEditPers" class="secondary" style="display:none">Cancelar edición</button>
         </div>
       </form>
     </div>
@@ -247,7 +254,8 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
     import {
-      getFirestore, collection, addDoc, getDocs, onSnapshot, query, where
+      getFirestore, collection, addDoc, getDocs, onSnapshot, query, where,
+      updateDoc, deleteDoc, doc
     } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
     import {
       getAuth, signInAnonymously
@@ -314,12 +322,25 @@
     const kpisMesSiguiente  = $("#kpisMesSiguiente");
     const listMesSiguiente  = $("#listMesSiguiente");
 
+    const btnSubmitLic   = $("#btnSubmitLic");
+    const btnCancelEditLic = $("#cancelEditLic");
+    const btnSubmitPers  = $("#btnSubmitPers");
+    const btnCancelEditPers = $("#cancelEditPers");
+
     let cachePersonal = [];
     let cacheLic      = [];
+    let editingLicId  = null;
+    let editingPersId = null;
 
     function renderPersonalAndSelects(){
       tbodyPersonal.innerHTML = cachePersonal
-        .map(p=>`<tr>${td(p.nombre)}${td(p.dni)}${td(p.servicio)}</tr>`).join("");
+        .map(p=>`<tr>
+          ${td(p.nombre)}${td(p.dni)}${td(p.servicio)}
+          <td>
+            <button type="button" class="secondary btn-edit-pers" data-id="${p.id}">Editar</button>
+            <button type="button" class="danger btn-del-pers" data-id="${p.id}">Borrar</button>
+          </td>
+        </tr>`).join("");
 
       const opciones = [...new Set(cachePersonal.map(p=>p.nombre).filter(Boolean))];
       const opts = `<option value="">-- Elegir profesional --</option>` + opciones.map(n=>`<option>${n}</option>`).join("");
@@ -329,13 +350,19 @@
 
     function renderLicenciasYMeses(){
       tbodyLic.innerHTML = cacheLic
-        .map(l=>`<tr>${td(l.profesional)}${td(l.cubre || "")}${td(fmt(l.inicio))}${td(fmt(l.fin))}</tr>`).join("");
+        .map(l=>`<tr>
+          ${td(l.profesional)}${td(l.cubre || "")}${td(fmt(l.inicio))}${td(fmt(l.fin))}
+          <td>
+            <button type="button" class="secondary btn-edit-lic" data-id="${l.id}">Editar</button>
+            <button type="button" class="danger btn-del-lic" data-id="${l.id}">Borrar</button>
+          </td>
+        </tr>`).join("");
 
       renderMes(cacheLic, 0, {title:titleMesActual, count:countMesActual, kpis:kpisMesActual, list:listMesActual});
       renderMes(cacheLic, 1, {title:titleMesSiguiente, count:countMesSiguiente, kpis:kpisMesSiguiente, list:listMesSiguiente});
     }
 
-    // 👉 KPI "Cubre" en vez de "Días cubiertos"
+    // KPI "Cubre" en vez de "Días cubiertos"
     function renderMes(all, offset, targets){
       const { start, end, label } = monthRange(offset);
       const arr = all.filter(l => inRange(l.inicio, start, end) || inRange(l.fin, start, end));
@@ -367,9 +394,10 @@
       try{
         const snap = await getDocs(collection(dbFS, COL_PERSONAL));
         cachePersonal = [];
-        snap.forEach(doc=>{
-          const d = doc.data();
+        snap.forEach(docSnap=>{
+          const d = docSnap.data();
           cachePersonal.push({
+            id: docSnap.id,
             nombre:   d[pick(d,["nombre","name","nombreCompleto","apellidoNombre","ApellidoNombre","profesional","Profesional"])] ?? "",
             dni:      d[pick(d,["dni","DNI","documento","Documento","doc"])] ?? "",
             servicio: d[pick(d,["servicio","Servicio","sector","Sector","area","Area","seccion","Seccion"])] ?? ""
@@ -386,9 +414,10 @@
       const col = collection(dbFS, COL_LICENCIAS);
       onSnapshot(col, (snap)=>{
         cacheLic = [];
-        snap.forEach(doc=>{
-          const d = doc.data();
+        snap.forEach(docSnap=>{
+          const d = docSnap.data();
           cacheLic.push({
+            id: docSnap.id,
             profesional: d[pick(d,[
               "profesional","profesionalNombre","professional","Profesional","ApellidoNombre","apellidoNombre"
             ])] ?? "",
@@ -415,7 +444,7 @@
       });
     }
 
-    // ALTAS
+    // === ALTAS / EDICIÓN LICENCIAS ===
     $("#formLicencia").addEventListener("submit", async (e)=>{
       e.preventDefault();
       const profesional = $("#profesional").value.trim();
@@ -428,24 +457,91 @@
       }
 
       try{
-        await addDoc(collection(dbFS, COL_LICENCIAS), {
-          profesional,
-          inicio,
-          fin,
-          cubre: cubre || null,
-          creadoEn:new Date().toISOString()
-        });
+        if(editingLicId){
+          await updateDoc(doc(dbFS, COL_LICENCIAS, editingLicId), {
+            profesional,
+            inicio,
+            fin,
+            cubre: cubre || null
+          });
+          alert("Licencia actualizada.");
+        } else {
+          await addDoc(collection(dbFS, COL_LICENCIAS), {
+            profesional,
+            inicio,
+            fin,
+            cubre: cubre || null,
+            creadoEn:new Date().toISOString()
+          });
+          alert("Licencia registrada.");
+        }
         $("#fechaInicio").value="";
         $("#fechaFin").value="";
         $("#cubre").value="";
-        alert("Licencia registrada.");
+        $("#profesional").value="";
+        editingLicId = null;
+        btnSubmitLic.textContent = "Registrar licencia";
+        btnCancelEditLic.style.display = "none";
       } catch(err){
-        console.error("Error al registrar licencia:", err);
-        alert("Error al registrar licencia: " + (err.message || err.code));
-        setStatus("Error al registrar licencia: " + (err.message || err.code));
+        console.error("Error al guardar licencia:", err);
+        alert("Error al guardar licencia: " + (err.message || err.code));
+        setStatus("Error al guardar licencia: " + (err.message || err.code));
       }
     });
 
+    btnCancelEditLic.addEventListener("click", ()=>{
+      editingLicId = null;
+      btnSubmitLic.textContent = "Registrar licencia";
+      btnCancelEditLic.style.display = "none";
+      $("#fechaInicio").value="";
+      $("#fechaFin").value="";
+      $("#cubre").value="";
+      $("#profesional").value="";
+      setStatus("");
+    });
+
+    async function handleEditLic(id){
+      const lic = cacheLic.find(l=>l.id===id);
+      if(!lic) return;
+      editingLicId = id;
+      $("#profesional").value = lic.profesional || "";
+      $("#fechaInicio").value = fmt(lic.inicio);
+      $("#fechaFin").value    = fmt(lic.fin);
+      $("#cubre").value       = lic.cubre || "";
+      btnSubmitLic.textContent = "Guardar cambios";
+      btnCancelEditLic.style.display = "inline-flex";
+      setStatus("Editando licencia (guardá o cancelá la edición).");
+      document.getElementById("formLicencia").scrollIntoView({behavior:"smooth"});
+    }
+
+    async function handleDeleteLic(id){
+      const lic = cacheLic.find(l=>l.id===id);
+      const msg = `¿Seguro que querés borrar la licencia de ${lic?.profesional || ""} (${fmt(lic?.inicio)} → ${fmt(lic?.fin)})?`;
+      if(!confirm(msg)) return;
+
+      try{
+        await deleteDoc(doc(dbFS, COL_LICENCIAS, id));
+        alert("Licencia eliminada.");
+      } catch(err){
+        console.error("Error eliminando licencia:", err);
+        alert("Error eliminando licencia: " + (err.message || err.code));
+        setStatus("Error eliminando licencia: " + (err.message || err.code));
+      }
+    }
+
+    // Delegación de eventos en tabla de licencias
+    tbodyLic.addEventListener("click", (e)=>{
+      const btn = e.target.closest("button");
+      if(!btn) return;
+      const id = btn.dataset.id;
+      if(btn.classList.contains("btn-edit-lic")){
+        handleEditLic(id);
+      } else if(btn.classList.contains("btn-del-lic")){
+        handleDeleteLic(id);
+      }
+    });
+
+    // === ALTAS / EDICIÓN PERSONAL ===
     $("#formPersonal").addEventListener("submit", async (e)=>{
       e.preventDefault();
       const nombre = $("#nombrePersonal").value.trim();
@@ -455,20 +551,78 @@
       }
 
       try{
-        await addDoc(collection(dbFS, COL_PERSONAL), {
-          nombre,
-          creadoEn:new Date().toISOString()
-        });
+        if(editingPersId){
+          await updateDoc(doc(dbFS, COL_PERSONAL, editingPersId), {
+            nombre
+          });
+          alert("Profesional actualizado.");
+        } else {
+          await addDoc(collection(dbFS, COL_PERSONAL), {
+            nombre,
+            creadoEn:new Date().toISOString()
+          });
+          alert("Profesional agregado.");
+        }
         $("#nombrePersonal").value="";
+        editingPersId = null;
+        btnSubmitPers.textContent = "Agregar profesional";
+        btnCancelEditPers.style.display = "none";
         await loadPersonal();
-        alert("Profesional agregado.");
       } catch(err){
-        console.error("Error al agregar profesional:", err);
-        alert("Error al agregar profesional: " + (err.message || err.code));
-        setStatus("Error al agregar profesional: " + (err.message || err.code));
+        console.error("Error al guardar profesional:", err);
+        alert("Error al guardar profesional: " + (err.message || err.code));
+        setStatus("Error al guardar profesional: " + (err.message || err.code));
       }
     });
 
+    btnCancelEditPers.addEventListener("click", ()=>{
+      editingPersId = null;
+      btnSubmitPers.textContent = "Agregar profesional";
+      btnCancelEditPers.style.display = "none";
+      $("#nombrePersonal").value="";
+      setStatus("");
+    });
+
+    async function handleEditPers(id){
+      const per = cachePersonal.find(p=>p.id===id);
+      if(!per) return;
+      editingPersId = id;
+      $("#nombrePersonal").value = per.nombre || "";
+      btnSubmitPers.textContent = "Guardar cambios";
+      btnCancelEditPers.style.display = "inline-flex";
+      setStatus("Editando profesional (guardá o cancelá la edición).");
+      document.getElementById("formPersonal").scrollIntoView({behavior:"smooth"});
+    }
+
+    async function handleDeletePers(id){
+      const per = cachePersonal.find(p=>p.id===id);
+      const msg = `¿Seguro que querés borrar al profesional "${per?.nombre || ""}"?`;
+      if(!confirm(msg)) return;
+
+      try{
+        await deleteDoc(doc(dbFS, COL_PERSONAL, id));
+        alert("Profesional eliminado.");
+        await loadPersonal();
+      } catch(err){
+        console.error("Error eliminando profesional:", err);
+        alert("Error eliminando profesional: " + (err.message || err.code));
+        setStatus("Error eliminando profesional: " + (err.message || err.code));
+      }
+    }
+
+    // Delegación en tabla de personal
+    tbodyPersonal.addEventListener("click", (e)=>{
+      const btn = e.target.closest("button");
+      if(!btn) return;
+      const id = btn.dataset.id;
+      if(btn.classList.contains("btn-edit-pers")){
+        handleEditPers(id);
+      } else if(btn.classList.contains("btn-del-pers")){
+        handleDeletePers(id);
+      }
+    });
+
+    // === HISTORIAL ===
     $("#buscarHistorial").addEventListener("click", async ()=>{
       const nombre = $("#buscadorProfesional").value;
       resHist.innerHTML = "";
