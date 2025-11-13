@@ -20,13 +20,11 @@
     }
     .app{ max-width:1100px; margin:40px auto; padding:24px; }
 
-    /* TITULOS */
     .header{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:6px; }
     .header h1{ margin:0; font-size:clamp(22px,3.2vw,32px) }
     .sub{ color:var(--muted); font-size:14px }
     #status{ margin-bottom:16px; color:#fbbf24; font-size:13px; }
 
-    /* TARJETAS */
     .card, details{
       background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01));
       border:1px solid rgba(255,255,255,.06);
@@ -36,7 +34,7 @@
       padding:20px; margin-top:16px;
     }
 
-    /* 👉 Destacado especial para "Licencias de este mes" (verde) */
+    /* Bloque "Licencias de este mes" bien destacado (verde) */
     #blockMesActual{
       background:linear-gradient(135deg,#22c55e,#16a34a);
       border:1px solid #16a34a;
@@ -50,19 +48,21 @@
 
     h2{ margin:0 0 10px 0; font-size:20px }
 
-    /* FORMULARIOS */
     form{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)) }
     label{ font-size:12px; color:var(--muted); margin-bottom:4px; display:block }
+
     input, select{
       width:100%; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,.07);
       background:#0b1220; color:var(--text); outline:none;
     }
+
     input:focus, select:focus{
       box-shadow:0 0 0 3px rgba(79,70,229,.25);
       border-color:var(--accent);
     }
+
     .actions{
-      display:flex; gap:10px; margin-top:6px; align-items:center; flex-wrap:wrap
+      display:flex; gap:10px; margin-top:6px; align-items:center; flex-wrap:wrap;
     }
 
     button{
@@ -77,7 +77,6 @@
     .danger{ background:#7f1d1d; border:1px solid #b91c1c; box-shadow:0 8px 20px rgba(185,28,28,.4); }
     .ok{ background:linear-gradient(180deg,#22c55e,var(--ok)) }
 
-    /* TABLAS */
     .table-wrap{ overflow:auto; border-radius:14px; border:1px solid rgba(255,255,255,.06) }
     table{ width:100%; border-collapse:collapse; font-size:14px; background:#0b1220 }
     thead th{
@@ -143,7 +142,7 @@
       <div class="biglist" id="listMesSiguiente"></div>
     </div>
 
-    <!-- NUEVA LICENCIA – CON "CUBRE" -->
+    <!-- FORM LICENCIAS -->
     <div class="card">
       <h2>Nueva licencia</h2>
 
@@ -177,7 +176,7 @@
       </form>
     </div>
 
-    <!-- LICENCIAS REGISTRADAS (COLAPSADO) -->
+    <!-- TABLA LICENCIAS -->
     <details>
       <summary>Licencias registradas</summary>
       <div class="inner">
@@ -213,7 +212,7 @@
       <div id="resultadoHistorial" style="margin-top:1rem"></div>
     </div>
 
-    <!-- PERSONAL ACTUAL -->
+    <!-- PERSONAL -->
     <details>
       <summary>Personal actual</summary>
       <div class="inner">
@@ -233,7 +232,6 @@
       </div>
     </details>
 
-    <!-- GESTIÓN DE PERSONAL -->
     <div class="card">
       <h2>Gestión de personal</h2>
       <form id="formPersonal">
@@ -274,7 +272,7 @@
     const dbFS = getFirestore(app);
     const auth = getAuth(app);
 
-    // 👇 Cambiá estos nombres si tus colecciones reales son otras
+    // Cambiá estos nombres si tus colecciones se llaman distinto
     const COL_PERSONAL  = "personal";
     const COL_LICENCIAS = "licencias";
 
@@ -283,28 +281,45 @@
     const statusEl = $("#status");
     const setStatus = msg => { if(statusEl) statusEl.textContent = msg || ""; };
 
-    // acepta string, Date o Timestamp de Firestore
+    // Convierte distintos tipos a Date
     const toDate = (v)=>{
       if(!v) return null;
       if(v instanceof Date) return v;
-      if(typeof v.toDate === "function") return v.toDate(); // Timestamp
+      if(typeof v.toDate === "function") return v.toDate(); // Timestamp Firestore
       return new Date(v);
     };
-    const fmt = d => {
+
+    // Formato para <input type="date"> → YYYY-MM-DD
+    const fmtISO = d => {
       const x = toDate(d);
-      return x && !isNaN(+x) ? x.toISOString().slice(0,10) : "";
+      if(!x || isNaN(+x)) return "";
+      return x.toISOString().slice(0,10);
     };
+
+    // Formato argentino para mostrar → DD/MM/AAAA
+    const fmtAR = d => {
+      const x = toDate(d);
+      if(!x || isNaN(+x)) return "";
+      const day = x.getDate().toString().padStart(2,"0");
+      const mon = (x.getMonth()+1).toString().padStart(2,"0");
+      const year = x.getFullYear();
+      return `${day}/${mon}/${year}`;
+    };
+
     const monthLabel = date =>
       date.toLocaleDateString("es-AR",{month:"long",year:"numeric"})
            .replace(/^./,c=>c.toUpperCase());
+
     const monthRange = (offset=0)=>{
       const now=new Date(); const y=now.getFullYear(), m=now.getMonth()+offset;
       return { start:new Date(y,m,1), end:new Date(y,m+1,1), label:monthLabel(new Date(y,m,1)) };
     };
+
     const inRange=(d,start,end)=>{
       const x=toDate(d);
       return x && +x>=+start && +x<+end;
     };
+
     const pick = (obj, keys) => keys.find(k => obj?.[k] !== undefined);
 
     const selAltaProf   = $("#profesional");
@@ -322,9 +337,9 @@
     const kpisMesSiguiente  = $("#kpisMesSiguiente");
     const listMesSiguiente  = $("#listMesSiguiente");
 
-    const btnSubmitLic   = $("#btnSubmitLic");
-    const btnCancelEditLic = $("#cancelEditLic");
-    const btnSubmitPers  = $("#btnSubmitPers");
+    const btnSubmitLic      = $("#btnSubmitLic");
+    const btnCancelEditLic  = $("#cancelEditLic");
+    const btnSubmitPers     = $("#btnSubmitPers");
     const btnCancelEditPers = $("#cancelEditPers");
 
     let cachePersonal = [];
@@ -351,7 +366,7 @@
     function renderLicenciasYMeses(){
       tbodyLic.innerHTML = cacheLic
         .map(l=>`<tr>
-          ${td(l.profesional)}${td(l.cubre || "")}${td(fmt(l.inicio))}${td(fmt(l.fin))}
+          ${td(l.profesional)}${td(l.cubre || "")}${td(fmtAR(l.inicio))}${td(fmtAR(l.fin))}
           <td>
             <button type="button" class="secondary btn-edit-lic" data-id="${l.id}">Editar</button>
             <button type="button" class="danger btn-del-lic" data-id="${l.id}">Borrar</button>
@@ -362,7 +377,7 @@
       renderMes(cacheLic, 1, {title:titleMesSiguiente, count:countMesSiguiente, kpis:kpisMesSiguiente, list:listMesSiguiente});
     }
 
-    // KPI "Cubre" en vez de "Días cubiertos"
+    // KPI "Cubre"
     function renderMes(all, offset, targets){
       const { start, end, label } = monthRange(offset);
       const arr = all.filter(l => inRange(l.inicio, start, end) || inRange(l.fin, start, end));
@@ -382,7 +397,7 @@
           <div>
             <div class="who">${a.profesional || '(Sin nombre)'}</div>
             <div class="dates">
-              ${fmt(a.inicio)} → ${fmt(a.fin)}
+              ${fmtAR(a.inicio)} → ${fmtAR(a.fin)}
               ${a.cubre ? ` • Cubre: ${a.cubre}` : ""}
             </div>
           </div>
@@ -444,7 +459,7 @@
       });
     }
 
-    // === ALTAS / EDICIÓN LICENCIAS ===
+    // === LICENCIAS: alta / edición ===
     $("#formLicencia").addEventListener("submit", async (e)=>{
       e.preventDefault();
       const profesional = $("#profesional").value.trim();
@@ -482,6 +497,7 @@
         editingLicId = null;
         btnSubmitLic.textContent = "Registrar licencia";
         btnCancelEditLic.style.display = "none";
+        setStatus("");
       } catch(err){
         console.error("Error al guardar licencia:", err);
         alert("Error al guardar licencia: " + (err.message || err.code));
@@ -505,8 +521,8 @@
       if(!lic) return;
       editingLicId = id;
       $("#profesional").value = lic.profesional || "";
-      $("#fechaInicio").value = fmt(lic.inicio);
-      $("#fechaFin").value    = fmt(lic.fin);
+      $("#fechaInicio").value = fmtISO(lic.inicio);
+      $("#fechaFin").value    = fmtISO(lic.fin);
       $("#cubre").value       = lic.cubre || "";
       btnSubmitLic.textContent = "Guardar cambios";
       btnCancelEditLic.style.display = "inline-flex";
@@ -516,7 +532,7 @@
 
     async function handleDeleteLic(id){
       const lic = cacheLic.find(l=>l.id===id);
-      const msg = `¿Seguro que querés borrar la licencia de ${lic?.profesional || ""} (${fmt(lic?.inicio)} → ${fmt(lic?.fin)})?`;
+      const msg = `¿Seguro que querés borrar la licencia de ${lic?.profesional || ""} (${fmtAR(lic?.inicio)} → ${fmtAR(lic?.fin)})?`;
       if(!confirm(msg)) return;
 
       try{
@@ -529,7 +545,6 @@
       }
     }
 
-    // Delegación de eventos en tabla de licencias
     tbodyLic.addEventListener("click", (e)=>{
       const btn = e.target.closest("button");
       if(!btn) return;
@@ -541,7 +556,7 @@
       }
     });
 
-    // === ALTAS / EDICIÓN PERSONAL ===
+    // === PERSONAL: alta / edición ===
     $("#formPersonal").addEventListener("submit", async (e)=>{
       e.preventDefault();
       const nombre = $("#nombrePersonal").value.trim();
@@ -568,6 +583,7 @@
         btnSubmitPers.textContent = "Agregar profesional";
         btnCancelEditPers.style.display = "none";
         await loadPersonal();
+        setStatus("");
       } catch(err){
         console.error("Error al guardar profesional:", err);
         alert("Error al guardar profesional: " + (err.message || err.code));
@@ -610,7 +626,6 @@
       }
     }
 
-    // Delegación en tabla de personal
     tbodyPersonal.addEventListener("click", (e)=>{
       const btn = e.target.closest("button");
       if(!btn) return;
@@ -672,7 +687,7 @@
         const fin = d.fin    || d.fechaFin    || d.FechaFin    || d.hasta || d.Hasta || d.FechaHasta;
         const cubre = d.cubre || d.Cubre || d.cubreServicio || d.cobertura || d.Cobertura || "";
         const tr = document.createElement("tr");
-        tr.innerHTML = `${td(cubre)}${td(fmt(ini))}${td(fmt(fin))}`;
+        tr.innerHTML = `${td(cubre)}${td(fmtAR(ini))}${td(fmtAR(fin))}`;
         tb.appendChild(tr);
       });
       const wrap = document.createElement("div");
