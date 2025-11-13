@@ -4,11 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Gestión de Licencias (Firestore)</title>
+
   <style>
     *{box-sizing:border-box} html,body{height:100%}
     :root{
       --bg:#0f172a; --panel:#111827; --muted:#9ca3af; --text:#e5e7eb;
-      --accent:#4f46e5; --accent-2:#4338ca; --ok:#16a34a; --bad:#dc2626;
+      --accent:#4f46e5; --accent-2:#4338ca; --ok:#16a34a;
       --radius:16px; --shadow:0 10px 30px rgba(0,0,0,.35);
     }
     body{
@@ -18,58 +19,78 @@
       background:radial-gradient(1200px 800px at 10% -10%, #1e293b 10%, var(--bg) 60%);
     }
     .app{ max-width:1100px; margin:40px auto; padding:24px; }
+
+    /* TITULOS */
     .header{ display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:6px; }
     .header h1{ margin:0; font-size:clamp(22px,3.2vw,32px) }
     .sub{ color:var(--muted); font-size:14px }
     #status{ margin-bottom:16px; color:#fbbf24; font-size:13px; }
+
+    /* TARJETAS */
     .card, details{
       background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01));
-      border:1px solid rgba(255,255,255,.06); border-radius:var(--radius);
-      box-shadow:var(--shadow); backdrop-filter:blur(8px);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      backdrop-filter:blur(8px);
       padding:20px; margin-top:16px;
     }
+
+    /* 👉 Destacado especial para "Licencias de este mes" (opción A verde) */
+    #blockMesActual{
+      background:linear-gradient(135deg,#22c55e,#16a34a);
+      border:1px solid #16a34a;
+      box-shadow:0 0 25px rgba(34,197,94,0.5);
+    }
+    #blockMesActual h2,
+    #blockMesActual .count{
+      color:#f9fafb;
+      text-shadow:0 1px 3px rgba(0,0,0,.7);
+    }
+
     h2{ margin:0 0 10px 0; font-size:20px }
+
+    /* FORMULARIOS */
     form{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)) }
-    label{ font-size:12px; color:var(--muted); display:block; margin-bottom:6px; letter-spacing:.3px }
+    label{ font-size:12px; color:var(--muted); margin-bottom:4px; display:block }
     input, select{
       width:100%; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,.07);
-      background:#0b1220; color:var(--text); outline:none; transition:.15s ease;
+      background:#0b1220; color:var(--text); outline:none;
     }
-    input:focus, select:focus{ box-shadow:0 0 0 3px rgba(79,70,229,.25); border-color:var(--accent) }
-    .actions{ display:flex; flex-wrap:wrap; gap:10px; margin-top:6px; align-items:center }
+    input:focus, select:focus{
+      box-shadow:0 0 0 3px rgba(79,70,229,.25);
+      border-color:var(--accent);
+    }
+    .actions{ display:flex; gap:10px; margin-top:6px; align-items:center; flex-wrap:wrap }
+
     button{
       border:0; border-radius:12px; padding:10px 14px; cursor:pointer; font-weight:600;
       background:linear-gradient(180deg, var(--accent), var(--accent-2)); color:white;
-      box-shadow:0 8px 20px rgba(79,70,229,.35); transition:.15s transform ease;
+      box-shadow:0 8px 20px rgba(79,70,229,.35);
+      transition:.15s transform ease;
     }
     button:hover{ transform:translateY(-1px) }
     .secondary{ background:#111827; border:1px solid rgba(255,255,255,.07) }
     .ok{ background:linear-gradient(180deg,#22c55e,var(--ok)) }
+
+    /* TABLAS */
     .table-wrap{ overflow:auto; border-radius:14px; border:1px solid rgba(255,255,255,.06) }
     table{ width:100%; border-collapse:collapse; font-size:14px; background:#0b1220 }
     thead th{
-      position:sticky; top:0; background:#0f172a; z-index:1;
-      text-align:left; padding:12px; color:#cbd5e1;
-      border-bottom:1px solid rgba(255,255,255,.06)
+      position:sticky; top:0; background:#0f172a; padding:12px; color:#cbd5e1;
+      border-bottom:1px solid rgba(255,255,255,.06); text-align:left;
     }
     tbody td{ padding:12px; border-bottom:1px solid rgba(255,255,255,.06) }
     tbody tr:hover{ background:rgba(79,70,229,.08) }
-    summary{ cursor:pointer; font-weight:600; font-size:1.05rem; color:var(--text); list-style:none }
-    summary::marker{ display:none }
-    summary::before{
-      content:"▶"; margin-right:8px; transition:transform .2s ease; display:inline-block
-    }
-    details[open] summary::before{ transform:rotate(90deg) }
-    .inner{ margin-top:0.8rem; animation:fadeIn .25s ease }
-    @keyframes fadeIn{ from{opacity:0;transform:translateY(-3px)} to{opacity:1;transform:translateY(0)} }
-    .highlight{ padding:26px }
-    .highlight h2{ font-size: clamp(24px, 4vw, 34px); margin-bottom:12px }
-    .count{ font-size: clamp(18px, 3.2vw, 22px); color:#cbd5e1; margin-bottom:10px }
+
+    /* Bloques de lista y pills */
+    .count{ font-size:clamp(18px,3.2vw,22px); color:#e5e7eb; margin-bottom:10px }
     .kpis{ display:flex; flex-wrap:wrap; gap:10px; margin-top:8px }
     .pill{
       border:1px solid rgba(255,255,255,.12); border-radius:999px;
       padding:.4rem .7rem; font-size:13px; color:#d1d5db;
       display:flex; align-items:center; gap:8px;
+      background:#02061755;
     }
     .pill .dot{ width:8px; height:8px; border-radius:999px; background:#4f46e5 }
     .biglist{ display:grid; gap:10px; margin-top:12px }
@@ -79,59 +100,80 @@
     }
     .item .who{ font-weight:600 }
     .item .dates{ color:#cbd5e1; font-size:13px }
+
+    summary{ cursor:pointer; font-weight:600; font-size:1.05rem; color:var(--text); list-style:none }
+    summary::marker{ display:none }
+    summary::before{
+      content:"▶"; margin-right:8px; transition:transform .2s ease; display:inline-block;
+    }
+    details[open] summary::before{ transform:rotate(90deg) }
+
     @media (max-width:640px){
       .header{flex-direction:column; align-items:flex-start}
       table{font-size:13px}
     }
   </style>
 </head>
+
 <body>
   <div class="app">
+
+    <!-- ENCABEZADO -->
     <div class="header">
       <h1>Gestión de Licencias</h1>
       <div class="sub">Sincroniza con tu Firebase existente</div>
     </div>
     <div id="status" class="sub"></div>
 
-    <!-- DESTACADOS -->
-    <div class="card highlight" id="blockMesActual">
+    <!-- BLOQUES DESTACADOS -->
+    <div class="card" id="blockMesActual">
       <h2 id="titleMesActual">Licencias de este mes</h2>
       <div class="count" id="countMesActual">0 licencias</div>
       <div class="kpis" id="kpisMesActual"></div>
       <div class="biglist" id="listMesActual"></div>
     </div>
-    <div class="card highlight" id="blockMesSiguiente">
+
+    <div class="card" id="blockMesSiguiente">
       <h2 id="titleMesSiguiente">Licencias del mes siguiente</h2>
       <div class="count" id="countMesSiguiente">0 licencias</div>
       <div class="kpis" id="kpisMesSiguiente"></div>
       <div class="biglist" id="listMesSiguiente"></div>
     </div>
 
-    <!-- NUEVA LICENCIA -->
+    <!-- NUEVA LICENCIA – CON "CUBRE" -->
     <div class="card">
       <h2>Nueva licencia</h2>
+
       <form id="formLicencia">
         <div>
-          <label for="profesional">Profesional</label>
+          <label>Profesional</label>
           <select id="profesional" required>
             <option value="">-- Elegir profesional --</option>
           </select>
         </div>
+
         <div>
-          <label for="fechaInicio">Fecha de inicio</label>
+          <label>Fecha de inicio</label>
           <input type="date" id="fechaInicio" required />
         </div>
+
         <div>
-          <label for="fechaFin">Fecha de finalización</label>
+          <label>Fecha de finalización</label>
           <input type="date" id="fechaFin" required />
         </div>
+
+        <div>
+          <label>Cubre</label>
+          <input type="text" id="cubre" placeholder="Ej: Guardia, Consultorio..." />
+        </div>
+
         <div class="actions">
           <button type="submit" class="ok">Registrar licencia</button>
         </div>
       </form>
     </div>
 
-    <!-- LICENCIAS REGISTRADAS -->
+    <!-- LICENCIAS REGISTRADAS (COLAPSADO) -->
     <details>
       <summary>Licencias registradas</summary>
       <div class="inner">
@@ -140,7 +182,7 @@
             <thead>
               <tr>
                 <th>Profesional</th>
-                <th>Motivo</th>
+                <th>Cubre</th>
                 <th>Inicio</th>
                 <th>Fin</th>
               </tr>
@@ -154,13 +196,15 @@
     <!-- HISTORIAL -->
     <div class="card">
       <h2>Historial de licencias</h2>
+
       <div class="actions">
-        <label for="buscadorProfesional" style="align-self:center">Seleccionar profesional</label>
+        <label>Seleccionar profesional</label>
         <select id="buscadorProfesional">
           <option value="">-- Elegir profesional --</option>
         </select>
         <button id="buscarHistorial" class="secondary" type="button">Buscar</button>
       </div>
+
       <div id="resultadoHistorial" style="margin-top:1rem"></div>
     </div>
 
@@ -188,9 +232,10 @@
       <h2>Gestión de personal</h2>
       <form id="formPersonal">
         <div>
-          <label for="nombrePersonal">Nombre y Apellido</label>
+          <label>Nombre y Apellido</label>
           <input type="text" id="nombrePersonal" required />
         </div>
+
         <div class="actions">
           <button type="submit" class="ok">Agregar profesional</button>
         </div>
@@ -198,6 +243,7 @@
     </div>
   </div>
 
+  <!-- ===================  JAVASCRIPT  =================== -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
     import {
@@ -283,12 +329,13 @@
 
     function renderLicenciasYMeses(){
       tbodyLic.innerHTML = cacheLic
-        .map(l=>`<tr>${td(l.profesional)}${td(l.motivo)}${td(fmt(l.inicio))}${td(fmt(l.fin))}</tr>`).join("");
+        .map(l=>`<tr>${td(l.profesional)}${td(l.cubre || "")}${td(fmt(l.inicio))}${td(fmt(l.fin))}</tr>`).join("");
 
       renderMes(cacheLic, 0, {title:titleMesActual, count:countMesActual, kpis:kpisMesActual, list:listMesActual});
       renderMes(cacheLic, 1, {title:titleMesSiguiente, count:countMesSiguiente, kpis:kpisMesSiguiente, list:listMesSiguiente});
     }
 
+    // 👉 KPI "Cubre" en vez de "Días cubiertos"
     function renderMes(all, offset, targets){
       const { start, end, label } = monthRange(offset);
       const arr = all.filter(l => inRange(l.inicio, start, end) || inRange(l.fin, start, end));
@@ -296,24 +343,21 @@
       targets.count.textContent = `${arr.length} licencia${arr.length!==1?'s':''}`;
 
       const unicos = new Set(arr.map(a=>a.profesional).filter(Boolean)).size;
-      let dias = 0;
-      arr.forEach(a=>{
-        const i = toDate(a.inicio), f = toDate(a.fin);
-        if(!i || !f || isNaN(+i) || isNaN(+f)) return;
-        const from = new Date(Math.max(+i, +start));
-        const to   = new Date(Math.min(+f, +end));
-        const ms   = (+to - +from);
-        if(ms >= 0) dias += Math.round(ms/86400000) + 1;
-      });
+      const cubreSet = new Set(arr.map(a=>a.cubre).filter(Boolean));
+      const cubreTxt = [...cubreSet].join(" • ") || "—";
+
       targets.kpis.innerHTML = `
         <div class="pill"><span class="dot"></span>Profesionales: <strong>${unicos}</strong></div>
-        <div class="pill"><span class="dot"></span>Días cubiertos (aprox.): <strong>${dias}</strong></div>
+        <div class="pill"><span class="dot"></span>Cubre: <strong>${cubreTxt}</strong></div>
       `;
       targets.list.innerHTML = arr.map(a=>`
         <div class="item">
           <div>
             <div class="who">${a.profesional || '(Sin nombre)'}</div>
-            <div class="dates">${fmt(a.inicio)} → ${fmt(a.fin)} ${a.motivo?`• ${a.motivo}`:''}</div>
+            <div class="dates">
+              ${fmt(a.inicio)} → ${fmt(a.fin)}
+              ${a.cubre ? ` • Cubre: ${a.cubre}` : ""}
+            </div>
           </div>
         </div>
       `).join("") || `<div class="item"><div>No hay licencias registradas para ${label}.</div></div>`;
@@ -348,8 +392,8 @@
             profesional: d[pick(d,[
               "profesional","profesionalNombre","professional","Profesional","ApellidoNombre","apellidoNombre"
             ])] ?? "",
-            motivo: d[pick(d,[
-              "motivo","Motivo","causa","Causa","motivoLicencia","MotivoLicencia"
+            cubre: d[pick(d,[
+              "cubre","Cubre","cubreServicio","cobertura","Cobertura"
             ])] ?? "",
             inicio: d[pick(d,[
               "inicio","fechaInicio","FechaInicio","desde","Desde","FechaDesde"
@@ -377,8 +421,9 @@
       const profesional = $("#profesional").value.trim();
       const inicio = $("#fechaInicio").value;
       const fin    = $("#fechaFin").value;
+      const cubre  = $("#cubre").value.trim();
       if(!profesional || !inicio || !fin){
-        alert("Completá todos los campos.");
+        alert("Completá profesional y fechas.");
         return;
       }
 
@@ -387,10 +432,12 @@
           profesional,
           inicio,
           fin,
+          cubre: cubre || null,
           creadoEn:new Date().toISOString()
         });
         $("#fechaInicio").value="";
         $("#fechaFin").value="";
+        $("#cubre").value="";
         alert("Licencia registrada.");
       } catch(err){
         console.error("Error al registrar licencia:", err);
@@ -464,13 +511,14 @@
       });
 
       const table = document.createElement("table");
-      table.innerHTML = `<thead><tr><th>Motivo</th><th>Inicio</th><th>Fin</th></tr></thead><tbody></tbody>`;
+      table.innerHTML = `<thead><tr><th>Cubre</th><th>Inicio</th><th>Fin</th></tr></thead><tbody></tbody>`;
       const tb = table.querySelector("tbody");
       items.forEach(d=>{
         const ini = d.inicio || d.fechaInicio || d.FechaInicio || d.desde || d.Desde || d.FechaDesde;
         const fin = d.fin    || d.fechaFin    || d.FechaFin    || d.hasta || d.Hasta || d.FechaHasta;
+        const cubre = d.cubre || d.Cubre || d.cubreServicio || d.cobertura || d.Cobertura || "";
         const tr = document.createElement("tr");
-        tr.innerHTML = `${td(d.motivo ?? d.Motivo ?? d.causa ?? d.Causa ?? d.motivoLicencia ?? d.MotivoLicencia ?? "")}${td(fmt(ini))}${td(fmt(fin))}`;
+        tr.innerHTML = `${td(cubre)}${td(fmt(ini))}${td(fmt(fin))}`;
         tb.appendChild(tr);
       });
       const wrap = document.createElement("div");
@@ -479,6 +527,7 @@
       resHist.appendChild(wrap);
     });
 
+    // Inicio: login anónimo + datos
     (async ()=>{
       try{
         setStatus("Conectando a Firebase...");
