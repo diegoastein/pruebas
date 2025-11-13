@@ -3,9 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Gestión de Licencias</title>
+  <title>Gestión de Licencias (Auto Sync Firebase)</title>
   <style>
-    /* ====== Estilo base oscuro y UI limpia ====== */
     *{box-sizing:border-box} html,body{height:100%}
     :root{
       --bg:#0f172a; --panel:#111827; --muted:#9ca3af; --text:#e5e7eb;
@@ -27,11 +26,11 @@
     h2{ margin:0 0 10px 0; font-size:20px }
     form{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)) }
     label{ font-size:12px; color:var(--muted); display:block; margin-bottom:6px; letter-spacing:.3px }
-    input, select, textarea{
+    input, select{
       width:100%; padding:12px; border-radius:12px; border:1px solid rgba(255,255,255,.07);
       background:#0b1220; color:var(--text); outline:none; transition:.15s ease;
     }
-    input:focus, select:focus, textarea:focus{ box-shadow:0 0 0 3px rgba(79,70,229,.25); border-color:var(--accent) }
+    input:focus, select:focus{ box-shadow:0 0 0 3px rgba(79,70,229,.25); border-color:var(--accent) }
     .actions{ display:flex; flex-wrap:wrap; gap:10px; margin-top:6px }
     button{
       border:0; border-radius:12px; padding:10px 14px; cursor:pointer; font-weight:600;
@@ -41,35 +40,25 @@
     button:hover{ transform:translateY(-1px) }
     .secondary{ background:#111827; border:1px solid rgba(255,255,255,.07) }
     .ok{ background:linear-gradient(180deg,#22c55e,var(--ok)) }
-    .danger{ background:linear-gradient(180deg,#ef4444,var(--bad)) }
     .table-wrap{ overflow:auto; border-radius:14px; border:1px solid rgba(255,255,255,.06) }
     table{ width:100%; border-collapse:collapse; font-size:14px; background:#0b1220 }
     thead th{ position:sticky; top:0; background:#0f172a; z-index:1; text-align:left; padding:12px; color:#cbd5e1; border-bottom:1px solid rgba(255,255,255,.06) }
     tbody td{ padding:12px; border-bottom:1px solid rgba(255,255,255,.06) }
     tbody tr:hover{ background:rgba(79,70,229,.08) }
-    /* Colapsables */
     summary{ cursor:pointer; font-weight:600; font-size:1.05rem; color:var(--text); list-style:none }
     summary::marker{ display:none } summary::before{ content:"▶"; margin-right:8px; transition:transform .2s ease; display:inline-block }
     details[open] summary::before{ transform:rotate(90deg) }
     .inner{ margin-top:0.8rem; animation:fadeIn .25s ease } @keyframes fadeIn{ from{opacity:0;transform:translateY(-3px)} to{opacity:1;transform:translateY(0)} }
-
-    /* ====== Bloques destacados (mes actual/siguiente) ====== */
     .highlight{ padding:26px }
     .highlight h2{ font-size: clamp(24px, 4vw, 34px); margin-bottom:12px }
     .count{ font-size: clamp(18px, 3.2vw, 22px); color:#cbd5e1; margin-bottom:10px }
     .kpis{ display:flex; flex-wrap:wrap; gap:10px; margin-top:8px }
-    .pill{
-      border:1px solid rgba(255,255,255,.12); border-radius:999px; padding:.4rem .7rem; font-size:13px; color:#d1d5db;
-      display:flex; align-items:center; gap:8px;
-    }
+    .pill{ border:1px solid rgba(255,255,255,.12); border-radius:999px; padding:.4rem .7rem; font-size:13px; color:#d1d5db; display:flex; align-items:center; gap:8px; }
     .pill .dot{ width:8px; height:8px; border-radius:999px; background:#4f46e5 }
     .biglist{ display:grid; gap:10px; margin-top:12px }
-    .item{
-      border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:12px;
-      display:flex; align-items:center; justify-content:space-between; gap:12px; background:#0b1220;
-    }
-    .item .who{ font-weight:600 }
-    .item .dates{ color:#cbd5e1; font-size:13px }
+    .item{ border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:12px;
+      display:flex; align-items:center; justify-content:space-between; gap:12px; background:#0b1220; }
+    .item .who{ font-weight:600 } .item .dates{ color:#cbd5e1; font-size:13px }
     @media (max-width:640px){ .header{flex-direction:column; align-items:flex-start} table{font-size:13px} }
   </style>
 </head>
@@ -77,17 +66,16 @@
   <div class="app">
     <div class="header">
       <h1>Gestión de Licencias</h1>
-      <div class="sub">Datos en Firebase (Firestore)</div>
+      <div class="sub">Sincroniza con tu Firebase existente</div>
     </div>
 
-    <!-- ===== DESTACADOS: Mes actual / Mes siguiente ===== -->
+    <!-- DESTACADOS -->
     <div class="card highlight" id="blockMesActual">
       <h2 id="titleMesActual">Licencias de este mes</h2>
       <div class="count" id="countMesActual">0 licencias</div>
       <div class="kpis" id="kpisMesActual"></div>
       <div class="biglist" id="listMesActual"></div>
     </div>
-
     <div class="card highlight" id="blockMesSiguiente">
       <h2 id="titleMesSiguiente">Licencias del mes siguiente</h2>
       <div class="count" id="countMesSiguiente">0 licencias</div>
@@ -95,7 +83,7 @@
       <div class="biglist" id="listMesSiguiente"></div>
     </div>
 
-    <!-- ===== Alta de licencias (SIN motivo) ===== -->
+    <!-- NUEVA LICENCIA (sin motivo) -->
     <div class="card">
       <h2>Nueva licencia</h2>
       <form id="formLicencia">
@@ -119,292 +107,4 @@
       </form>
     </div>
 
-    <!-- ===== Licencias registradas (colapsada) ===== -->
-    <details>
-      <summary>Licencias registradas</summary>
-      <div class="inner">
-        <div class="table-wrap">
-          <table id="tablaLicencias">
-            <thead>
-              <tr>
-                <th>Profesional</th>
-                <th>Motivo</th>
-                <th>Inicio</th>
-                <th>Fin</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </details>
-
-    <!-- ===== Historial por profesional ===== -->
-    <div class="card">
-      <h2>Historial de licencias</h2>
-      <div class="actions">
-        <label for="buscadorProfesional" style="align-self:center">Seleccionar profesional</label>
-        <select id="buscadorProfesional">
-          <option value="">-- Elegir profesional --</option>
-        </select>
-        <button id="buscarHistorial" class="secondary" type="button">Buscar</button>
-      </div>
-      <div id="resultadoHistorial" style="margin-top:1rem"></div>
-    </div>
-
-    <!-- ===== Personal actual (colapsada) ===== -->
-    <details>
-      <summary>Personal actual</summary>
-      <div class="inner">
-        <div class="table-wrap">
-          <table id="tablaPersonal">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>DNI</th>
-                <th>Servicio</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </details>
-
-    <!-- ===== Gestión de personal (solo nombre) ===== -->
-    <div class="card">
-      <h2>Gestión de personal</h2>
-      <form id="formPersonal">
-        <div>
-          <label for="nombrePersonal">Nombre y Apellido</label>
-          <input type="text" id="nombrePersonal" required />
-        </div>
-        <div class="actions">
-          <button type="submit" class="ok">Agregar profesional</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- ===== Firebase + App (ESM) ===== -->
-  <script type="module">
-    // Firebase SDK (ES Modules desde CDN)
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
-    import {
-      getFirestore, collection, addDoc, getDocs, onSnapshot,
-      query, where, orderBy
-    } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
-
-    // === Config provista ===
-    const firebaseConfig = {
-      apiKey: "AIzaSyB0ZNZskD4qFvj1n9s15Kd6ZUj3xwnSuqc",
-      authDomain: "licencias-1a717.firebaseapp.com",
-      projectId: "licencias-1a717",
-      storageBucket: "licencias-1a717.firebasestorage.app",
-      messagingSenderId: "81776336703",
-      appId: "1:81776336703:web:e4a42b8c759dfa89a5fd8a"
-    };
-
-    // === App / DB ===
-    const app = initializeApp(firebaseConfig);
-    const db  = getFirestore(app);
-
-    // === Colecciones ===
-    const COL_PERSONAL  = "personal";
-    const COL_LICENCIAS = "licencias";
-
-    // === Utils DOM / fechas ===
-    const $ = s => document.querySelector(s);
-    const td = txt => `<td>${txt ?? ""}</td>`;
-    const pick = (obj, keys) => keys.find(k => obj?.[k] !== undefined);
-    const toDate = (v) => {
-      if (!v) return null;
-      try {
-        if (typeof v === "object" && v.seconds) return new Date(v.seconds * 1000); // Timestamp
-      } catch {}
-      if (v instanceof Date) return v;
-      return new Date(v); // ISO / YYYY-MM-DD
-    };
-    const fmt = (d) => {
-      const dt = toDate(d);
-      if(!dt || isNaN(+dt)) return "";
-      return dt.toISOString().slice(0,10);
-    };
-    const monthLabel = (date) =>
-      date.toLocaleDateString("es-AR", { month:"long", year:"numeric" })
-        .replace(/^./, c => c.toUpperCase());
-
-    const monthRange = (offset=0) => {
-      const now = new Date();
-      const y = now.getFullYear(), m = now.getMonth() + offset;
-      const start = new Date(y, m, 1, 0,0,0,0);
-      const end   = new Date(y, m+1, 1, 0,0,0,0);
-      return { start, end, label: monthLabel(start) };
-    };
-    const inRange = (d, start, end) => {
-      const x = toDate(d);
-      return x && +x >= +start && +x < +end;
-    };
-
-    // === DOM refs destacados ===
-    const titleMesActual = $("#titleMesActual");
-    const countMesActual = $("#countMesActual");
-    const listMesActual  = $("#listMesActual");
-    const kpisMesActual  = $("#kpisMesActual");
-
-    const titleMesSiguiente = $("#titleMesSiguiente");
-    const countMesSiguiente = $("#countMesSiguiente");
-    const listMesSiguiente  = $("#listMesSiguiente");
-    const kpisMesSiguiente  = $("#kpisMesSiguiente");
-
-    // === Resto DOM ===
-    const selAltaProf   = $("#profesional");
-    const selHistProf   = $("#buscadorProfesional");
-    const tbodyPersonal = $("#tablaPersonal tbody");
-    const tbodyLic      = $("#tablaLicencias tbody");
-    const resHist       = $("#resultadoHistorial");
-
-    // ===== Personal =====
-    async function loadPersonalOnce(){
-      const snap = await getDocs(collection(db, COL_PERSONAL));
-      const options = [];
-      const rows = [];
-      snap.forEach(doc => {
-        const d = doc.data();
-        const kNombre = pick(d, ["nombre","name","nombreCompleto"]);
-        const kDni    = pick(d, ["dni","documento"]);
-        const kServ   = pick(d, ["servicio","sector","area"]);
-        const nombre  = d[kNombre] ?? "";
-        const dni     = d[kDni] ?? "";
-        const serv    = d[kServ] ?? "";
-        rows.push(`<tr>${td(nombre)}${td(dni)}${td(serv)}</tr>`);
-        options.push(nombre);
-      });
-      tbodyPersonal.innerHTML = rows.join("");
-      const unique = [...new Set(options.filter(Boolean))];
-      selAltaProf.innerHTML = `<option value="">-- Elegir profesional --</option>` + unique.map(n=>`<option>${n}</option>`).join("");
-      selHistProf.innerHTML = `<option value="">-- Elegir profesional --</option>` + unique.map(n=>`<option>${n}</option>`).join("");
-    }
-
-    // ===== Licencias (live) + Destacados por mes =====
-    function startLicenciasLive(){
-      const qLic = query(collection(db, COL_LICENCIAS), orderBy("inicio","desc"));
-      onSnapshot(qLic, (snap) => {
-        const all = [];
-        const rows = [];
-        snap.forEach(doc => {
-          const d = doc.data();
-          const kProf = pick(d, ["profesional","profesionalNombre","professional"]);
-          const kIni  = pick(d, ["inicio","fechaInicio"]);
-          const kFin  = pick(d, ["fin","fechaFin"]);
-          const item = {
-            profesional: d[kProf] ?? "",
-            motivo: d.motivo ?? d.Motivo ?? "",
-            inicio: d[kIni] ?? "",
-            fin: d[kFin] ?? ""
-          };
-          all.push(item);
-          rows.push(`<tr>${td(item.profesional)}${td(item.motivo)}${td(fmt(item.inicio))}${td(fmt(item.fin))}</tr>`);
-        });
-        // Tabla general
-        tbodyLic.innerHTML = rows.join("");
-
-        // Mes actual y siguiente
-        renderMes(all, 0, {title: titleMesActual, count: countMesActual, list: listMesActual, kpis: kpisMesActual});
-        renderMes(all, 1, {title: titleMesSiguiente, count: countMesSiguiente, list: listMesSiguiente, kpis: kpisMesSiguiente});
-      });
-    }
-
-    function renderMes(all, offset, targets){
-      const { start, end, label } = monthRange(offset);
-      const arr = all.filter(l => inRange(l.inicio, start, end) || inRange(l.fin, start, end));
-      targets.title.textContent = offset === 0 ? `Licencias de ${label}` : `Licencias de ${label}`;
-      targets.count.textContent = `${arr.length} licencia${arr.length!==1?'s':''}`;
-
-      // KPI simple: profesionales únicos y días totales (estimado por rango)
-      const unicos = new Set(arr.map(a=>a.profesional).filter(Boolean)).size;
-      let dias = 0;
-      arr.forEach(a=>{
-        const i = toDate(a.inicio), f = toDate(a.fin);
-        if(i && f){
-          // intersección con el mes
-          const from = new Date(Math.max(+i, +start));
-          const to   = new Date(Math.min(+f, +end));
-          const ms = (+to - +from);
-          if(ms >= 0) dias += Math.round(ms/86400000) + 1;
-        }
-      });
-      targets.kpis.innerHTML = `
-        <div class="pill"><span class="dot"></span>Profesionales: <strong>${unicos}</strong></div>
-        <div class="pill"><span class="dot"></span>Días cubiertos (aprox.): <strong>${dias}</strong></div>
-      `;
-
-      // Lista grande
-      targets.list.innerHTML = arr.map(a=>`
-        <div class="item">
-          <div>
-            <div class="who">${a.profesional || '(Sin nombre)'}</div>
-            <div class="dates">${fmt(a.inicio)} → ${fmt(a.fin)} ${a.motivo?`• ${a.motivo}`:''}</div>
-          </div>
-        </div>
-      `).join("") || `<div class="item"><div>No hay licencias registradas para ${label}.</div></div>`;
-    }
-
-    // ===== Alta de Licencia (sin motivo) =====
-    $("#formLicencia").addEventListener("submit", async (e)=>{
-      e.preventDefault();
-      const profesional = $("#profesional").value.trim();
-      const inicio      = $("#fechaInicio").value;
-      const fin         = $("#fechaFin").value;
-      if(!profesional || !inicio || !fin){ alert("Completá todos los campos."); return; }
-      await addDoc(collection(db, COL_LICENCIAS), { profesional, inicio, fin, creadoEn: new Date().toISOString() });
-      $("#fechaInicio").value = ""; $("#fechaFin").value = "";
-      alert("Licencia registrada.");
-    });
-
-    // ===== Alta de Personal (solo nombre) =====
-    $("#formPersonal").addEventListener("submit", async (e)=>{
-      e.preventDefault();
-      const nombre  = $("#nombrePersonal").value.trim();
-      if(!nombre){ alert("Completá el nombre."); return; }
-      await addDoc(collection(db, COL_PERSONAL), { nombre, creadoEn:new Date().toISOString() });
-      $("#nombrePersonal").value = "";
-      await loadPersonalOnce();
-      alert("Profesional agregado.");
-    });
-
-    // ===== Historial por Profesional =====
-    $("#buscarHistorial").addEventListener("click", async ()=>{
-      const nombre = $("#buscadorProfesional").value;
-      const cont = $("#resultadoHistorial");
-      cont.innerHTML = "";
-      if(!nombre){ cont.textContent = "Seleccioná un profesional."; return; }
-      const q1 = query(collection(db, COL_LICENCIAS), where("profesional","==",nombre));
-      const q2 = query(collection(db, COL_LICENCIAS), where("profesionalNombre","==",nombre));
-      const q3 = query(collection(db, COL_LICENCIAS), where("professional","==",nombre));
-      const [s1,s2,s3] = await Promise.all([getDocs(q1), getDocs(q2), getDocs(q3)]);
-      const items = [];
-      s1.forEach(d=>items.push(d.data()));
-      s2.forEach(d=>items.push(d.data()));
-      s3.forEach(d=>items.push(d.data()));
-      if(items.length===0){ cont.textContent="Sin licencias registradas."; return; }
-      items.sort((a,b)=> (new Date(fmt(b.inicio||b.fechaInicio))) - (new Date(fmt(a.inicio||a.fechaInicio))) );
-      const table = document.createElement("table");
-      table.innerHTML = `<thead><tr><th>Motivo</th><th>Inicio</th><th>Fin</th></tr></thead><tbody></tbody>`;
-      const tb = table.querySelector("tbody");
-      items.forEach(d=>{
-        const kIni = pick(d, ["inicio","fechaInicio"]); const kFin = pick(d, ["fin","fechaFin"]);
-        const tr = document.createElement("tr");
-        tr.innerHTML = `${td(d.motivo ?? d.Motivo ?? "")}${td(fmt(d[kIni]))}${td(fmt(d[kFin]))}`;
-        tb.appendChild(tr);
-      });
-      const wrap = document.createElement("div"); wrap.className = "table-wrap"; wrap.appendChild(table);
-      cont.appendChild(wrap);
-    });
-
-    // ===== Init =====
-    await loadPersonalOnce();
-    startLicenciasLive();
-  </script>
-</body>
-</html>
+    <!-- LICENCIAS REG
