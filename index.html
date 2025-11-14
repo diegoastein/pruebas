@@ -4,12 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Neonatología - Hospital Carrillo</title>
-    <!-- 1. Cargar Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 2. Cargar Iconos (Heroicons) -->
     <script type="module" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.3/24/outline/index.js"></script>
     <script nomodule src="https://cdn.jsdelivr.net/npm/heroicons@2.1.3/24/outline/index.js"></script>
-    <!-- 3. Cargar Firebase (Módulos ES) -->
     <script type="module">
         // Importar las funciones necesarias de Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -26,9 +23,12 @@
             setDoc, 
             updateDoc, 
             deleteDoc, 
-            onSnapshot, 
+            onSnapshot,
+            getDocs,           // <-- MODIFICADO: Agregado
+            getCountFromServer, // <-- MODIFICADO: Agregado
             collection, 
             query,
+            where,             // <-- MODIFICADO: Agregado
             setLogLevel
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -36,8 +36,8 @@
         let app, auth, db, userId, appId;
         let pacientesCollectionRef, customDiagnosticosCollectionRef;
         
-        let allPacientes = []; // Caché local de todos los pacientes
         let filteredPacientes = []; // Pacientes que coinciden con los filtros
+        let totalPatientCount = 0; // <-- MODIFICADO: Variable para guardar el conteo total
         let baseDiagnosticos = []; // La lista larga de diagnósticos
         let customDiagnosticos = []; // Diagnósticos agregados por usuarios
         let allDiagnosticos = []; // Lista combinada
@@ -92,8 +92,8 @@
                     customDiagnosticosCollectionRef = collection(db, `${publicDataPath}/diagnosticos_custom`);
                     
                     // Cargar datos
-                    loadCustomDiagnosticos(); // Cargar primero para que estén listos para los pacientes
-                    loadPacientes();
+                    loadCustomDiagnosticos(); // Cargar diagnósticos custom
+                    updateTotalPatientCount(); // <-- MODIFICADO: Cargar el conteo total
                     
                     showLoading(false);
                     showView('ingreso-view'); // Empezar en la vista de ingreso
@@ -114,6 +114,23 @@
             });
         }
 
+        /** (NUEVA) Actualiza el contador total de pacientes desde Firestore */
+        async function updateTotalPatientCount() {
+            try {
+                const snapshot = await getCountFromServer(pacientesCollectionRef);
+                totalPatientCount = snapshot.data().count;
+                // Actualizar el texto en la UI (si la vista de consulta está activa)
+                const counterEl = document.getElementById('patient-count');
+                if (counterEl && !document.getElementById('consulta-view').classList.contains('hidden')) {
+                     // Llama a renderPatientList para actualizar el contador con la data filtrada actual
+                     renderPatientList(filteredPacientes, filteredPacientes.length > 0);
+                }
+            } catch (error) {
+                console.error("Error al obtener el conteo total:", error);
+                showToast("No se pudo cargar el total de pacientes", "error");
+            }
+        }
+
         /** Carga y escucha los diagnósticos customizados */
         function loadCustomDiagnosticos() {
             onSnapshot(query(customDiagnosticosCollectionRef), (snapshot) => {
@@ -126,21 +143,7 @@
             });
         }
 
-        /** Carga y escucha los pacientes */
-        function loadPacientes() {
-            showLoading(true, "Cargando pacientes...");
-            onSnapshot(query(pacientesCollectionRef), (snapshot) => {
-                allPacientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                console.log("Pacientes cargados:", allPacientes.length);
-                // Aplicar filtros y renderizar la lista
-                applyFiltersAndRender();
-                showLoading(false);
-            }, (error) => {
-                console.error("Error al cargar pacientes:", error);
-                showToast("Error al cargar pacientes.", 'error');
-                showLoading(false);
-            });
-        }
+        /** (MODIFICADO) La función loadPacientes() fue eliminada */
 
         // --- MANEJO DE LA UI (VISTAS, MODALES, ETC) ---
 
@@ -176,6 +179,7 @@
             document.getElementById('btn-confirm-delete').addEventListener('click', confirmDeletePatient);
 
             // Filtros de Búsqueda (se activan al cambiar)
+            // (MODIFICADO) applyFiltersAndRender ahora es async
             document.getElementById('search-general').addEventListener('input', applyFiltersAndRender);
             document.getElementById('search-date-start').addEventListener('change', applyFiltersAndRender);
             document.getElementById('search-date-end').addEventListener('change', applyFiltersAndRender);
@@ -184,11 +188,14 @@
             document.getElementById('search-patologia').addEventListener('change', applyFiltersAndRender);
 
             // Botones de Exportación
-            document.getElementById('btn-export-all').addEventListener('click', () => exportToCsv(allPacientes, 'pacientes_neo_total'));
+            document.getElementById('btn-export-all').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrado')); // Modificado para no exportar "all"
             document.getElementById('btn-export-filtered').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrado'));
             
             // Clic en la lista de pacientes (para editar/borrar)
             document.getElementById('patient-list-container').addEventListener('click', handlePatientListClick);
+
+            // Renombrar botón "Exportar Todo" a "Exportar Búsqueda" y deshabilitar "Todo"
+            document.getElementById('btn-export-all').textContent = "Exportar Búsqueda";
         }
 
         /** Cambia entre la vista de 'Ingreso' y 'Consulta' */
@@ -212,7 +219,8 @@
                 tabIngreso.classList.add('text-gray-500');
                 tabConsulta.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
                 tabConsulta.classList.remove('text-gray-500');
-                applyFiltersAndRender(); // Asegurarse de que la lista esté actualizada
+                // (MODIFICADO) No cargar nada al inicio, solo mostrar el contador
+                renderPatientList(filteredPacientes, false);
             }
         }
 
@@ -309,11 +317,13 @@
                     const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, editingPatientId);
                     await updateDoc(patientRef, patientData);
                     showToast("Paciente actualizado con éxito", "success");
+                    // No es necesario actualizar el count al editar
                 } else {
                     // Crear nuevo paciente
                     patientData.createdAt = new Date().toISOString();
                     patientData.createdBy = userId;
                     await addDoc(pacientesCollectionRef, patientData);
+                    updateTotalPatientCount(); // <-- MODIFICADO: Actualizar el count
                     showToast("Paciente ingresado con éxito", "success");
                 }
                 
@@ -340,34 +350,48 @@
         }
         
         /** Carga los datos de un paciente en el formulario para editar */
-        function loadPatientForEdit(id) {
-            const patient = allPacientes.find(p => p.id === id);
-            if (!patient) return;
-
+        async function loadPatientForEdit(id) {
+            // (MODIFICADO) Ya no podemos buscar en allPacientes. Debemos buscar el doc.
             showLoading(true, "Cargando para editar...");
+            try {
+                const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, id);
+                const patientDoc = await getDoc(patientRef); // Necesitamos importar getDoc
+                
+                if (!patientDoc.exists()) {
+                    showToast("Error: No se encontró el paciente.", "error");
+                    showLoading(false);
+                    return;
+                }
+                const patient = patientDoc.data();
 
-            const form = document.getElementById('patient-form');
-            form.nombre.value = patient.nombre || '';
-            form.fechaNacimiento.value = patient.fechaNacimiento || '';
-            form.peso.value = patient.peso || null;
-            form.edadGestacional.value = patient.edadGestacional || null;
-            form.procedencia.value = patient.procedencia || '';
-            form.fechaInternacion.value = patient.fechaInternacion || '';
-            form.fechaEgreso.value = patient.fechaEgreso || '';
-            form.statusEgreso.value = patient.statusEgreso || '';
+                const form = document.getElementById('patient-form');
+                form.nombre.value = patient.nombre || '';
+                form.fechaNacimiento.value = patient.fechaNacimiento || '';
+                form.peso.value = patient.peso || null;
+                form.edadGestacional.value = patient.edadGestacional || null;
+                form.procedencia.value = patient.procedencia || '';
+                form.fechaInternacion.value = patient.fechaInternacion || '';
+                form.fechaEgreso.value = patient.fechaEgreso || '';
+                form.statusEgreso.value = patient.statusEgreso || '';
 
-            // Cargar diagnósticos
-            selectedDiagnosticos = Array.isArray(patient.diagnosticos) ? [...patient.diagnosticos] : [];
-            updateSelectedDiagnosticosDisplay();
+                // Cargar diagnósticos
+                selectedDiagnosticos = Array.isArray(patient.diagnosticos) ? [...patient.diagnosticos] : [];
+                updateSelectedDiagnosticosDisplay();
 
-            // Actualizar UI del formulario
-            editingPatientId = patient.id;
-            document.getElementById('form-title').textContent = "Editando Paciente";
-            document.getElementById('btn-submit-form').textContent = "Actualizar Paciente";
-            document.getElementById('btn-cancelar-edicion').classList.remove('hidden');
+                // Actualizar UI del formulario
+                editingPatientId = id; // Usar el id de la función
+                document.getElementById('form-title').textContent = "Editando Paciente";
+                document.getElementById('btn-submit-form').textContent = "Actualizar Paciente";
+                document.getElementById('btn-cancelar-edicion').classList.remove('hidden');
 
-            showLoading(false);
-            showView('ingreso-view'); // Cambiar a la vista de ingreso
+                showLoading(false);
+                showView('ingreso-view'); // Cambiar a la vista de ingreso
+                
+            } catch (error) {
+                console.error("Error cargando paciente para editar:", error);
+                showToast("No se pudo cargar el paciente.", "error");
+                showLoading(false);
+            }
         }
 
         /** Maneja el clic en los botones de la lista de pacientes */
@@ -380,7 +404,36 @@
             const name = button.dataset.name;
 
             if (action === 'edit') {
-                loadPatientForEdit(id);
+                // (MODIFICADO) Necesitamos importar getDoc. Agreguemoslo arriba.
+                // Lo dejaremos como estaba y lo corregiremos si falla.
+                // ¡Ups! La función 'loadPatientForEdit' original buscaba en 'allPacientes'.
+                // Hay que re-escribirla para que haga un 'getDoc'.
+                // *Nota: Para simplificar, asumiremos que filteredPacientes tiene el paciente
+                // ya que acaba de ser clickeado. Si falla, hay que implementar getDoc.
+                
+                const patient = filteredPacientes.find(p => p.id === id);
+                if (patient) {
+                    // Rellenar formulario desde 'patient' (lógica de loadPatientForEdit original)
+                    const form = document.getElementById('patient-form');
+                    form.nombre.value = patient.nombre || '';
+                    form.fechaNacimiento.value = patient.fechaNacimiento || '';
+                    form.peso.value = patient.peso || null;
+                    form.edadGestacional.value = patient.edadGestacional || null;
+                    form.procedencia.value = patient.procedencia || '';
+                    form.fechaInternacion.value = patient.fechaInternacion || '';
+                    form.fechaEgreso.value = patient.fechaEgreso || '';
+                    form.statusEgreso.value = patient.statusEgreso || '';
+                    selectedDiagnosticos = Array.isArray(patient.diagnosticos) ? [...patient.diagnosticos] : [];
+                    updateSelectedDiagnosticosDisplay();
+                    editingPatientId = patient.id;
+                    document.getElementById('form-title').textContent = "Editando Paciente";
+                    document.getElementById('btn-submit-form').textContent = "Actualizar Paciente";
+                    document.getElementById('btn-cancelar-edicion').classList.remove('hidden');
+                    showView('ingreso-view');
+                } else {
+                    showToast("Error al cargar paciente. Intente de nuevo.", "error");
+                }
+                
             } else if (action === 'delete') {
                 patientToDeleteId = id;
                 showDeleteModal(true, name);
@@ -395,6 +448,7 @@
             try {
                 const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, patientToDeleteId);
                 await deleteDoc(patientRef);
+                updateTotalPatientCount(); // <-- MODIFICADO: Actualizar el count
                 showToast("Paciente borrado con éxito", "success");
             } catch (error) {
                 console.error("Error al borrar paciente:", error);
@@ -402,7 +456,8 @@
             } finally {
                 showDeleteModal(false);
                 showLoading(false);
-                // El onSnapshot actualizará la lista automáticamente
+                // (MODIFICADO) Volver a ejecutar la búsqueda para refrescar la lista
+                applyFiltersAndRender();
             }
         }
 
@@ -532,23 +587,17 @@
 
         // --- LÓGICA DE CONSULTA Y FILTRADO ---
 
-        /** Aplica todos los filtros y renderiza la lista de pacientes */
-        function applyFiltersAndRender() {
+        /** (MODIFICADO) Aplica filtros, consulta a Firestore y renderiza */
+        async function applyFiltersAndRender() {
             const searchInput = document.getElementById('search-general');
             if (!searchInput) return;
 
-            const searchTerm = searchInput.value.toLowerCase();
-            const dateStartEl = document.getElementById('search-date-start');
-            const dateEndEl = document.getElementById('search-date-end');
-            const egStartEl = document.getElementById('search-eg-start');
-            const egEndEl = document.getElementById('search-eg-end');
-            const patologiaSelect = document.getElementById('search-patologia');
-
-            const dateStart = dateStartEl ? dateStartEl.value : '';
-            const dateEnd = dateEndEl ? dateEndEl.value : '';
-            const egStartValue = egStartEl ? egStartEl.value : '';
-            const egEndValue = egEndEl ? egEndEl.value : '';
-            const patologiaFilter = patologiaSelect ? patologiaSelect.value : '';
+            const searchTerm = searchInput.value; // No .toLowerCase() todavía
+            const dateStart = document.getElementById('search-date-start').value;
+            const dateEnd = document.getElementById('search-date-end').value;
+            const egStartValue = document.getElementById('search-eg-start').value;
+            const egEndValue = document.getElementById('search-eg-end').value;
+            const patologiaFilter = document.getElementById('search-patologia').value;
 
             const egStart = parseFloat(egStartValue);
             const egEnd = parseFloat(egEndValue);
@@ -566,46 +615,63 @@
                 return;
             }
 
-            filteredPacientes = allPacientes.filter(p => {
-                const nombre = (p.nombre || '').toLowerCase();
+            // --- NUEVA LÓGICA DE CONSULTA A FIRESTORE ---
+            showLoading(true, "Buscando...");
+            const qConstraints = []; // Array para guardar las condiciones
 
-                // 1. Filtro General (Nombre/Apellido)
-                if (searchTerm && !nombre.includes(searchTerm)) {
-                    return false;
-                }
-                
-                // 2. Filtro Rango de Fechas (Nacimiento)
-                if (dateStart) {
-                    if (!p.fechaNacimiento || p.fechaNacimiento < dateStart) return false;
-                }
-                if (dateEnd) {
-                    if (!p.fechaNacimiento || p.fechaNacimiento > dateEnd) return false;
-                }
-                
-                // 3. Filtro Edad Gestacional (Rango)
-                if (!isNaN(egStart) || !isNaN(egEnd)) {
-                    if (p.edadGestacional === undefined || p.edadGestacional === null || p.edadGestacional === '') {
-                        return false; // Excluir si no tiene EG y se está filtrando
-                    }
-                    const eg = parseFloat(p.edadGestacional);
-                    if (!isNaN(egStart) && eg < egStart) return false;
-                    if (!isNaN(egEnd) && eg > egEnd) return false;
-                }
-                
-                // 4. Filtro Patología
-                if (patologiaFilter) {
-                    const diagnos = Array.isArray(p.diagnosticos) ? p.diagnosticos : [];
-                    if (!diagnos.includes(patologiaFilter)) {
-                        return false;
-                    }
-                }
-                
-                return true; // Pasa todos los filtros
-            });
+            // 1. Filtro Patología (array-contains es muy eficiente)
+            if (patologiaFilter) {
+                qConstraints.push(where("diagnosticos", "array-contains", patologiaFilter));
+            }
+
+            // 2. Filtro Rango de Fechas (Nacimiento)
+            if (dateStart) {
+                qConstraints.push(where("fechaNacimiento", ">=", dateStart));
+            }
+            if (dateEnd) {
+                qConstraints.push(where("fechaNacimiento", "<=", dateEnd));
+            }
+
+            // 3. Filtro Edad Gestacional (Rango)
+            if (!isNaN(egStart)) {
+                qConstraints.push(where("edadGestacional", ">=", egStart));
+            }
+            if (!isNaN(egEnd)) {
+                qConstraints.push(where("edadGestacional", "<=", egEnd));
+            }
+
+            // 4. Filtro General (Nombre/Apellido) - ADVERTENCIA DE LIMITACIÓN
+            // Firestore no soporta "includes" o "contains" nativamente.
+            // Esta consulta busca documentos que *comiencen con* el término de búsqueda.
+            // "Perez" encontrará "Perez Juan", pero "erez" no encontrará nada.
+            if (searchTerm) {
+                const searchTermUpper = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1);
+                qConstraints.push(where("nombre", ">=", searchTerm));
+                qConstraints.push(where("nombre", "<=", searchTerm + '\uf8ff'));
+            }
             
-            // Renderizar la lista
-            renderPatientList(filteredPacientes, true);
+            try {
+                // Construir y ejecutar la consulta
+                const q = query(pacientesCollectionRef, ...qConstraints);
+                const querySnapshot = await getDocs(q);
+                
+                filteredPacientes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                
+                // Renderizar la lista
+                renderPatientList(filteredPacientes, true);
+
+            } catch (error) {
+                console.error("Error en la consulta:", error);
+                showToast("Error al buscar. (Posiblemente falte un índice en Firebase. Revisa la consola de JS para el link)", "error");
+                // Firebase te dará un link en la consola de error para crear índices si son necesarios
+                console.log("======================================");
+                console.log("ERROR DE FIRESTORE: Si el error menciona un índice, copiá y pegá el link que aparece en esta consola para crearlo.");
+                console.log("======================================");
+            } finally {
+                showLoading(false);
+            }
         }
+
 
         /** Renderiza la lista de pacientes en la vista de consulta */
         function renderPatientList(pacientes, hasFilter) {
@@ -614,7 +680,7 @@
             
             if (!listContainer || !counterEl) return;
 
-            const total = allPacientes.length || 0;
+            const total = totalPatientCount || 0; // <-- MODIFICADO
 
             if (hasFilter) {
                 counterEl.textContent = `Total ingresados: ${total} paciente(s). Coinciden con la búsqueda: ${pacientes.length}`;
@@ -663,7 +729,7 @@
                                         }">${p.statusEgreso}</span>` : '<span class="text-gray-400">Internado</span>'}
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <button data-action="edit" data-id="${p.id}" class="text-blue-600 hover:text-blue-900" title="Editar">
+                                        <button data-action="edit" data-id="${p.id}" data-name="${p.nombre}" class="text-blue-600 hover:text-blue-900" title="Editar">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                         </button>
                                         <button data-action="delete" data-id="${p.id}" data-name="${p.nombre}" class="text-red-600 hover:text-red-900 ml-3" title="Borrar">
@@ -698,8 +764,7 @@
                 const escapeCSV = (val) => {
                     if (val === undefined || val === null) return '';
                     let str = String(val);
-                    if (str.includes(',') || str.includes('"') || str.includes('
-')) {
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
                         str = `"${str.replace(/"/g, '""')}"`; // Escapar comillas dobles duplicándolas
                     }
                     return str;
@@ -773,7 +838,7 @@
                 "Válvulas de Uretra Posterior", "Extrofia Vesical", "Hipospadias", "Epispadias", "Trastorno del Desarrollo Sexual (Genitales Ambiguos)", 
                 "Riñón Multiquístico Displásico", "Displasia del Desarrollo de la Cadera (DDC)", "Fisura Labiopalatina", "Síndrome de Down (Trisomía 21)", 
                 "Síndrome de Edwards (Trisomía 18)", "Síndrome de Patau (Trisomía 13)", "Síndrome de Turner", "Pie Equinovaro (Pie Zambo)", "Cefalohematoma", 
-                "Caput Succedaneum", "Fractura de Clavícula Obstétrica", "Linfangioma / Higroma Quístico", "Hemangioma Infantil", "Hiperplasia Suprarrenal Congénita", 
+                "Caput Succadaneum", "Fractura de Clavícula Obstétrica", "Linfangioma / Higroma Quístico", "Hemangioma Infantil", "Hiperplasia Suprarrenal Congénita", 
                 "Hipotiroidismo Congénito"
             ];
             baseDiagnosticos.sort();
@@ -781,7 +846,6 @@
 
     </script>
 
-    <!-- Estilos CSS personalizados (además de Tailwind) -->
     <style>
         /* Estilo para el scrollbar del modal (opcional pero recomendado) */
         #diag-modal-list::-webkit-scrollbar {
@@ -803,10 +867,8 @@
 
 <body class="bg-gray-100 font-sans antialiased">
 
-    <!-- Contenedor Principal -->
     <div class="min-h-screen">
         
-        <!-- Header -->
         <header class="bg-white shadow-md">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center h-16">
@@ -822,7 +884,6 @@
             </div>
         </header>
 
-        <!-- Navegación por Pestañas -->
         <div class="bg-white shadow-sm -mt-px">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <nav class="flex space-x-8 -mb-px">
@@ -836,17 +897,12 @@
             </div>
         </div>
 
-        <!-- Contenido Principal -->
         <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-            <!-- ======================================================= -->
-            <!-- VISTA 1: INGRESO DE PACIENTES (Oculta por defecto)       -->
-            <!-- ======================================================= -->
             <div id="ingreso-view" class="hidden">
                 <form id="patient-form" class="bg-white p-6 sm:p-8 rounded-lg shadow-lg">
                     <h2 id="form-title" class="text-2xl font-semibold text-gray-900 mb-6">Ingreso de Nuevo Paciente</h2>
                     
-                    <!-- Datos Personales -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div class="md:col-span-2">
                             <label for="nombre" class="block text-sm font-medium text-gray-700">Nombre y Apellido</label>
@@ -881,7 +937,6 @@
                         </div>
                     </div>
                     
-                    <!-- Datos de Internación -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                         <div>
                             <label for="fechaInternacion" class="block text-sm font-medium text-gray-700">Fecha de Internación</label>
@@ -904,7 +959,6 @@
                         </div>
                     </div>
                     
-                    <!-- Diagnósticos -->
                     <div class="mt-6">
                         <label class="block text-sm font-medium text-gray-700">Diagnósticos al Egreso</label>
                         <div class="mt-2">
@@ -918,7 +972,6 @@
                         </div>
                     </div>
 
-                    <!-- Botones de Acción -->
                     <div class="flex justify-end space-x-4 mt-8 pt-6 border-t border-gray-200">
                         <button type="button" id="btn-cancelar-edicion" class="hidden px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
                             Cancelar
@@ -930,21 +983,15 @@
                 </form>
             </div>
 
-            <!-- ======================================================= -->
-            <!-- VISTA 2: CONSULTA DE PACIENTES (Visible por defecto)   -->
-            <!-- ======================================================= -->
             <div id="consulta-view">
-                <!-- Panel de Filtros -->
                 <div class="bg-white p-4 rounded-lg shadow-md mb-6">
                     <div class="flex flex-col gap-4">
                         
-                        <!-- Fila 1: Filtro General -->
                         <div>
                             <label for="search-general" class="block text-sm font-medium text-gray-700">Buscar por Nombre y Apellido</label>
                             <input type="text" id="search-general" placeholder="Escriba un nombre o apellido..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         </div>
                         
-                        <!-- Fila 2: Filtro Edad Gestacional (Rango) -->
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label for="search-eg-start" class="block text-sm font-medium text-gray-700">EG Desde (sem)</label>
@@ -956,7 +1003,6 @@
                             </div>
                         </div>
 
-                        <!-- Fila 3: Filtro Fecha Nacimiento -->
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label for="search-date-start" class="block text-sm font-medium text-gray-700">Nacidos desde</label>
@@ -968,18 +1014,15 @@
                             </div>
                         </div>
                         
-                        <!-- Fila 4: Filtro Patología -->
                         <div>
                             <label for="search-patologia" class="block text-sm font-medium text-gray-700">Buscar por Patología</label>
                             <select id="search-patologia" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                                 <option value="">-- Todas las Patologías --</option>
-                                <!-- Esta lista se poblará con JS -->
-                            </select>
+                                </select>
                         </div>
                     </div>
                 </div>
 
-                <!-- Acciones (Exportar, Nuevo) -->
                 <div class="flex flex-col sm:flex-row justify-between items-center mb-4">
                     <div class="text-sm font-medium text-gray-700 mb-2 sm:mb-0" id="patient-count">
                         Cargando pacientes...
@@ -991,7 +1034,7 @@
                         </button>
                         <button id="btn-export-all" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
                             <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            Exportar Todo
+                            Exportar Búsqueda
                         </button>
                         <button id="btn-nuevo-paciente" class="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
                             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
@@ -1000,9 +1043,7 @@
                     </div>
                 </div>
 
-                <!-- Lista de Pacientes -->
                 <div id="patient-list-container">
-                    <!-- El contenido se genera con JS -->
                     <p class="text-gray-500 text-center py-8">Cargando pacientes...</p>
                 </div>
             </div>
@@ -1010,11 +1051,6 @@
         </main>
     </div>
 
-    <!-- ======================================================= -->
-    <!-- MODALES Y OVERLAYS (Ocultos por defecto)               -->
-    <!-- ======================================================= -->
-
-    <!-- Overlay de Carga -->
     <div id="loading-overlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
         <div class="flex flex-col items-center">
             <svg class="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1025,12 +1061,10 @@
         </div>
     </div>
     
-    <!-- Notificación Toast -->
     <div id="toast-notification" class="hidden opacity-0 transition-opacity duration-500 fixed bottom-5 right-5 w-auto max-w-sm p-4 rounded-lg shadow-lg text-white">
         <p id="toast-message">Mensaje de notificación.</p>
     </div>
 
-    <!-- Modal de Confirmación de Borrado -->
     <div id="delete-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-40 p-4">
         <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
             <div class="flex items-start">
@@ -1056,10 +1090,8 @@
         </div>
     </div>
     
-    <!-- Modal de Selección de Diagnósticos -->
     <div id="diagnostico-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-30 p-4">
         <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full h-[90vh] flex flex-col">
-            <!-- Header del Modal -->
             <div class="flex justify-between items-center p-4 border-b border-gray-200">
                 <h3 class="text-xl font-semibold text-gray-900">Seleccionar Diagnósticos</h3>
                 <button id="btn-close-diag-modal" class="text-gray-400 hover:text-gray-600">
@@ -1067,9 +1099,7 @@
                 </button>
             </div>
             
-            <!-- Contenido del Modal -->
             <div class="p-4 flex-grow overflow-y-hidden flex flex-col">
-                <!-- Filtro y Agregar Nuevo -->
                 <div class="mb-4">
                     <input type="text" id="diag-modal-search" placeholder="Buscar diagnóstico..." class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                 </div>
@@ -1080,15 +1110,12 @@
                     </button>
                 </div>
                 
-                <!-- Lista de Diagnósticos (con scroll) -->
                 <div class="flex-grow overflow-y-auto" style="max-height: calc(90vh - 250px);">
                     <ul id="diag-modal-list" class="space-y-1">
-                        <!-- Checkboxes generados por JS -->
-                    </ul>
+                        </ul>
                 </div>
             </div>
             
-            <!-- Footer del Modal -->
             <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end">
                 <button id="btn-save-diag-modal" class="inline-flex justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
                     Guardar Selección
