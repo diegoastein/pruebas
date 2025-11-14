@@ -510,22 +510,73 @@ async function addNewDiagnostico() {
 // --- LÓGICA DE CONSULTA Y FILTRADO ---
 
 /** Aplica filtros, consulta a Firestore y renderiza */
+
+/** Aplica filtros, consulta a Firestore y renderiza */
 async function applyFiltersAndRender() {
     const searchInput = document.getElementById('search-general');
     if (!searchInput) return;
 
-    const searchTerm = searchInput.value.toLowerCase();
-    // ... (varias líneas) ...
+    // 1. OBTENER TODOS LOS FILTROS
+    const searchTerm = searchInput.value.toLowerCase(); // Convertido a minúsculas
+    const dateStart = document.getElementById('search-date-start').value;
+    const dateEnd = document.getElementById('search-date-end').value;
+    const egStartValue = document.getElementById('search-eg-start').value;
+    const egEndValue = document.getElementById('search-eg-end').value;
+    const patologiaFilter = document.getElementById('search-patologia').value;
+
+    const egStart = parseFloat(egStartValue);
+    const egEnd = parseFloat(egEndValue);
+
+    // 2. VERIFICAR SI HAY FILTROS ACTIVOS
+    const hasFilters =
+        (searchTerm && searchTerm.trim() !== '') ||
+        dateStart || dateEnd ||
+        !isNaN(egStart) || !isNaN(egEnd) ||
+        patologiaFilter;
+
+    // Si no hay filtros, no mostrar nada
+    if (!hasFilters) {
+        filteredPacientes = [];
+        renderPatientList(filteredPacientes, false);
+        return;
+    }
+
+    // 3. MOSTRAR CARGA Y PREPARAR CONSULTA
+    showLoading(true, "Buscando...");
+    
+    // (Esta es la línea que faltaba y causaba el error)
+    const qConstraints = []; 
+
+    // 4. CONSTRUIR LAS CONDICIONES DE CONSULTA
+    
+    // Filtro Patología
+    if (patologiaFilter) {
+        qConstraints.push(where("diagnosticos", "array-contains", patologiaFilter));
+    }
+    // Filtro Fecha Nacimiento
+    if (dateStart) {
+        qConstraints.push(where("fechaNacimiento", ">=", dateStart));
+    }
+    if (dateEnd) {
+        qConstraints.push(where("fechaNacimiento", "<=", dateEnd));
+    }
+    // Filtro Edad Gestacional
+    if (!isNaN(egStart)) {
+        qConstraints.push(where("edadGestacional", ">=", egStart));
+    }
+    if (!isNaN(egEnd)) {
+        qConstraints.push(where("edadGestacional", "<=", egEnd));
+    }
+    
+    // Filtro Nivel Pro por Nombre (keywords)
     if (searchTerm) {
-        // Lógica Nivel Pro: buscar por palabras clave
         const searchKeywords = searchTerm.split(' ').filter(kw => kw.length > 0);
-        
-        // Agrega una condición por CADA palabra que escribió el usuario
         searchKeywords.forEach(kw => {
             qConstraints.push(where("nombre_keywords", "array-contains", kw));
         });
     }
     
+    // 5. EJECUTAR LA CONSULTA
     try {
         const q = query(pacientesCollectionRef, ...qConstraints);
         const querySnapshot = await getDocs(q);
@@ -544,7 +595,6 @@ async function applyFiltersAndRender() {
         showLoading(false);
     }
 }
-
 
 /** Renderiza la lista de pacientes en la vista de consulta */
 function renderPatientList(pacientes, hasFilter) {
