@@ -1,3 +1,4 @@
+
 // Importar las funciones necesarias de Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { 
@@ -277,15 +278,10 @@ function showDeleteModal(show, patientName = '') {
 async function handleFormSubmit(e) {
     e.preventDefault();
     showLoading(true, "Guardando...");
-const form = e.target;
-    
-    // Lógica Nivel Pro para crear las palabras clave
-    const nombreOriginal = form.nombre.value;
-    const keywords = nombreOriginal.toLowerCase().split(' ').filter(kw => kw.length > 0);
 
+    const form = e.target;
     const patientData = {
-        nombre: nombreOriginal,
-        nombre_keywords: keywords, // <-- EL NUEVO CAMPO PARA BÚSQUEDA
+        nombre: form.nombre.value,
         fechaNacimiento: form.fechaNacimiento.value,
         peso: form.peso.valueAsNumber,
         edadGestacional: form.edadGestacional.valueAsNumber,
@@ -510,14 +506,11 @@ async function addNewDiagnostico() {
 // --- LÓGICA DE CONSULTA Y FILTRADO ---
 
 /** Aplica filtros, consulta a Firestore y renderiza */
-
-/** Aplica filtros, consulta a Firestore y renderiza */
 async function applyFiltersAndRender() {
     const searchInput = document.getElementById('search-general');
     if (!searchInput) return;
 
-    // 1. OBTENER TODOS LOS FILTROS
-    const searchTerm = searchInput.value.toLowerCase(); // Convertido a minúsculas
+    const searchTerm = searchInput.value;
     const dateStart = document.getElementById('search-date-start').value;
     const dateEnd = document.getElementById('search-date-end').value;
     const egStartValue = document.getElementById('search-eg-start').value;
@@ -527,56 +520,41 @@ async function applyFiltersAndRender() {
     const egStart = parseFloat(egStartValue);
     const egEnd = parseFloat(egEndValue);
 
-    // 2. VERIFICAR SI HAY FILTROS ACTIVOS
     const hasFilters =
         (searchTerm && searchTerm.trim() !== '') ||
         dateStart || dateEnd ||
         !isNaN(egStart) || !isNaN(egEnd) ||
         patologiaFilter;
 
-    // Si no hay filtros, no mostrar nada
     if (!hasFilters) {
         filteredPacientes = [];
         renderPatientList(filteredPacientes, false);
         return;
     }
 
-    // 3. MOSTRAR CARGA Y PREPARAR CONSULTA
     showLoading(true, "Buscando...");
-    
-    // (Esta es la línea que faltaba y causaba el error)
-    const qConstraints = []; 
+    const qConstraints = [];
 
-    // 4. CONSTRUIR LAS CONDICIONES DE CONSULTA
-    
-    // Filtro Patología
     if (patologiaFilter) {
         qConstraints.push(where("diagnosticos", "array-contains", patologiaFilter));
     }
-    // Filtro Fecha Nacimiento
     if (dateStart) {
         qConstraints.push(where("fechaNacimiento", ">=", dateStart));
     }
     if (dateEnd) {
         qConstraints.push(where("fechaNacimiento", "<=", dateEnd));
     }
-    // Filtro Edad Gestacional
     if (!isNaN(egStart)) {
         qConstraints.push(where("edadGestacional", ">=", egStart));
     }
     if (!isNaN(egEnd)) {
         qConstraints.push(where("edadGestacional", "<=", egEnd));
     }
-    
-    // Filtro Nivel Pro por Nombre (keywords)
     if (searchTerm) {
-        const searchKeywords = searchTerm.split(' ').filter(kw => kw.length > 0);
-        searchKeywords.forEach(kw => {
-            qConstraints.push(where("nombre_keywords", "array-contains", kw));
-        });
+        qConstraints.push(where("nombre", ">=", searchTerm));
+        qConstraints.push(where("nombre", "<=", searchTerm + '\uf8ff'));
     }
     
-    // 5. EJECUTAR LA CONSULTA
     try {
         const q = query(pacientesCollectionRef, ...qConstraints);
         const querySnapshot = await getDocs(q);
@@ -595,6 +573,7 @@ async function applyFiltersAndRender() {
         showLoading(false);
     }
 }
+
 
 /** Renderiza la lista de pacientes en la vista de consulta */
 function renderPatientList(pacientes, hasFilter) {
