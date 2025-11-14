@@ -277,10 +277,15 @@ function showDeleteModal(show, patientName = '') {
 async function handleFormSubmit(e) {
     e.preventDefault();
     showLoading(true, "Guardando...");
+const form = e.target;
+    
+    // Lógica Nivel Pro para crear las palabras clave
+    const nombreOriginal = form.nombre.value;
+    const keywords = nombreOriginal.toLowerCase().split(' ').filter(kw => kw.length > 0);
 
-    const form = e.target;
     const patientData = {
-        nombre: form.nombre.value,
+        nombre: nombreOriginal,
+        nombre_keywords: keywords, // <-- EL NUEVO CAMPO PARA BÚSQUEDA
         fechaNacimiento: form.fechaNacimiento.value,
         peso: form.peso.valueAsNumber,
         edadGestacional: form.edadGestacional.valueAsNumber,
@@ -509,49 +514,16 @@ async function applyFiltersAndRender() {
     const searchInput = document.getElementById('search-general');
     if (!searchInput) return;
 
-    const searchTerm = searchInput.value;
-    const dateStart = document.getElementById('search-date-start').value;
-    const dateEnd = document.getElementById('search-date-end').value;
-    const egStartValue = document.getElementById('search-eg-start').value;
-    const egEndValue = document.getElementById('search-eg-end').value;
-    const patologiaFilter = document.getElementById('search-patologia').value;
-
-    const egStart = parseFloat(egStartValue);
-    const egEnd = parseFloat(egEndValue);
-
-    const hasFilters =
-        (searchTerm && searchTerm.trim() !== '') ||
-        dateStart || dateEnd ||
-        !isNaN(egStart) || !isNaN(egEnd) ||
-        patologiaFilter;
-
-    if (!hasFilters) {
-        filteredPacientes = [];
-        renderPatientList(filteredPacientes, false);
-        return;
-    }
-
-    showLoading(true, "Buscando...");
-    const qConstraints = [];
-
-    if (patologiaFilter) {
-        qConstraints.push(where("diagnosticos", "array-contains", patologiaFilter));
-    }
-    if (dateStart) {
-        qConstraints.push(where("fechaNacimiento", ">=", dateStart));
-    }
-    if (dateEnd) {
-        qConstraints.push(where("fechaNacimiento", "<=", dateEnd));
-    }
-    if (!isNaN(egStart)) {
-        qConstraints.push(where("edadGestacional", ">=", egStart));
-    }
-    if (!isNaN(egEnd)) {
-        qConstraints.push(where("edadGestacional", "<=", egEnd));
-    }
+    const searchTerm = searchInput.value.toLowerCase();
+    // ... (varias líneas) ...
     if (searchTerm) {
-        qConstraints.push(where("nombre", ">=", searchTerm));
-        qConstraints.push(where("nombre", "<=", searchTerm + '\uf8ff'));
+        // Lógica Nivel Pro: buscar por palabras clave
+        const searchKeywords = searchTerm.split(' ').filter(kw => kw.length > 0);
+        
+        // Agrega una condición por CADA palabra que escribió el usuario
+        searchKeywords.forEach(kw => {
+            qConstraints.push(where("nombre_keywords", "array-contains", kw));
+        });
     }
     
     try {
