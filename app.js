@@ -1,4 +1,3 @@
-
 // Importar las funciones necesarias de Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { 
@@ -176,13 +175,13 @@ function setupUIListeners() {
     document.getElementById('search-patologia').addEventListener('change', applyFiltersAndRender);
 
     // Botones de Exportación
-    document.getElementById('btn-export-all').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrado')); // Modificado para no exportar "all"
+    document.getElementById('btn-export-all').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrado'));
     document.getElementById('btn-export-filtered').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrado'));
     
     // Clic en la lista de pacientes (para editar/borrar)
     document.getElementById('patient-list-container').addEventListener('click', handlePatientListClick);
 
-    // Renombrar botón "Exportar Todo" a "Exportar Búsqueda" y deshabilitar "Todo"
+    // Renombrar botón "Exportar Todo" a "Exportar Búsqueda"
     document.getElementById('btn-export-all').textContent = "Exportar Búsqueda";
 }
 
@@ -280,8 +279,16 @@ async function handleFormSubmit(e) {
     showLoading(true, "Guardando...");
 
     const form = e.target;
+    
+    // ===== LÓGICA NIVEL PRO =====
+    const nombreOriginal = form.nombre.value;
+    // Crea un array de palabras clave: "Juan Pérez" -> ['juan', 'pérez']
+    const keywords = nombreOriginal.toLowerCase().split(' ').filter(kw => kw.length > 0);
+    // ============================
+
     const patientData = {
-        nombre: form.nombre.value,
+        nombre: nombreOriginal,
+        nombre_keywords: keywords, // <-- Campo "Nivel Pro" para buscar
         fechaNacimiento: form.fechaNacimiento.value,
         peso: form.peso.valueAsNumber,
         edadGestacional: form.edadGestacional.valueAsNumber,
@@ -510,7 +517,8 @@ async function applyFiltersAndRender() {
     const searchInput = document.getElementById('search-general');
     if (!searchInput) return;
 
-    const searchTerm = searchInput.value;
+    // 1. OBTENER TODOS LOS FILTROS
+    const searchTerm = searchInput.value.toLowerCase(); // Convertido a minúsculas
     const dateStart = document.getElementById('search-date-start').value;
     const dateEnd = document.getElementById('search-date-end').value;
     const egStartValue = document.getElementById('search-eg-start').value;
@@ -520,41 +528,60 @@ async function applyFiltersAndRender() {
     const egStart = parseFloat(egStartValue);
     const egEnd = parseFloat(egEndValue);
 
+    // 2. VERIFICAR SI HAY FILTROS ACTIVOS
     const hasFilters =
         (searchTerm && searchTerm.trim() !== '') ||
         dateStart || dateEnd ||
         !isNaN(egStart) || !isNaN(egEnd) ||
         patologiaFilter;
 
+    // Si no hay filtros, no mostrar nada
     if (!hasFilters) {
         filteredPacientes = [];
         renderPatientList(filteredPacientes, false);
         return;
     }
 
+    // 3. MOSTRAR CARGA Y PREPARAR CONSULTA
     showLoading(true, "Buscando...");
-    const qConstraints = [];
+    
+    const qConstraints = []; // (Esta era la línea que faltaba antes)
 
+    // 4. CONSTRUIR LAS CONDICIONES DE CONSULTA
+    
+    // Filtro Patología
     if (patologiaFilter) {
         qConstraints.push(where("diagnosticos", "array-contains", patologiaFilter));
     }
+    // Filtro Fecha Nacimiento
     if (dateStart) {
         qConstraints.push(where("fechaNacimiento", ">=", dateStart));
     }
     if (dateEnd) {
         qConstraints.push(where("fechaNacimiento", "<=", dateEnd));
     }
+    // Filtro Edad Gestacional
     if (!isNaN(egStart)) {
         qConstraints.push(where("edadGestacional", ">=", egStart));
     }
     if (!isNaN(egEnd)) {
         qConstraints.push(where("edadGestacional", "<=", egEnd));
     }
-    if (searchTerm) {
-        qConstraints.push(where("nombre", ">=", searchTerm));
-        qConstraints.push(where("nombre", "<=", searchTerm + '\uf8ff'));
-    }
     
+    // ===== LÓGICA NIVEL PRO =====
+    // Filtro Nivel Pro por Nombre (keywords)
+    if (searchTerm) {
+        // "perez juan" -> ['perez', 'juan']
+        const searchKeywords = searchTerm.split(' ').filter(kw => kw.length > 0);
+        
+        // Agrega un 'where' por CADA palabra
+        searchKeywords.forEach(kw => {
+            qConstraints.push(where("nombre_keywords", "array-contains", kw));
+        });
+    }
+    // ============================
+    
+    // 5. EJECUTAR LA CONSULTA
     try {
         const q = query(pacientesCollectionRef, ...qConstraints);
         const querySnapshot = await getDocs(q);
@@ -721,10 +748,11 @@ function populateBaseDiagnosticos() {
         "Candidiasis Sistémica Neonatal", "Infección del Tracto Urinario (ITU) Neonatal", "Encefalopatía Hipóxico-Isquémica (EHI)", "Convulsiones Neonatales", 
         "Hemorragia Intraventricular Grado I", "Hemorragia Intraventricular Grado II", "Hemorragia Intraventricular Grado III", "Hemorragia Intraventricular Grado IV", 
         "Leucomalacia Periventricular (LPV)", "Hidrocefalia Congénita", "Hidrocefalia Adquirida", "Mielomeningocele", "Microcefalia", "Macrocefalia", 
-        "Síndrome de Abstinencia Neonatal (SAN)", "Hemorragia Subdural Neonatal", "Hemorragia Subaracnoidea Neonatal", "Hipotonía Neonatal", 
+        "Síndrome de Abstinencia Neonatal (SAN)", "Hemorragia Subdral Neonatal", "Hemorragia Subaracnoidea Neonatal", "Hipotonía Neonatal", 
         "Parálisis Braquial Obstétrica", "Parálisis Facial Neonatal", "Ductus Arterioso Persistente (PCA)", "Comunicación Interauricular (CIA)", 
         "Comunicación Interventricular (CIV)", "Coartación de Aorta (CoA)", "Tetralogía de Fallot", "Transposición de Grandes Vasos (TGV)", 
         "Síndrome de Corazón Izquierdo Hipoplásico", "Canal Auriculoventricular", "Estenosis Pulmonar Crítica", "Estenosis Aórtica Crítica", "Shock Séptico Neonatal", 
+
         "Shock Cardiogénico Neonatal", "Shock Hipovolémico Neonatal", "Taquicardia Supraventricular Neonatal", "Sospecha de Enterocolitis Necrotizante", 
         "Enterocolitis Necrotizante Confirmada", "Reflujo Gastroesofágico (RGE) Neonatal", "Dificultades de Alimentación", "Intolerancia Alimentaria", 
         "Atresia Esofágica", "Fístula Traqueoesofágica", "Atresia Duodenal", "Estenosis Duodenal", "Atresia Yeyuno-ileal", "Malrotación Intestinal", 
